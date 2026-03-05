@@ -1,0 +1,45 @@
+journals:
+  - name: Advanced Engineering Informatics
+    publisher: elsevier
+    crossref_issns:
+      - "1873-5320"   # eISSN（有来源这样标）
+      - "1474-0346"   # pISSN（很多库这样标）
+      - "0925-7535"   # 另一个常见 ISSN（有来源这样标）
+    discover_date_filter: "update-date"
+
+  - name: Earthquake Engineering & Structural Dynamics
+    publisher: wiley
+    crossref_issn: "1096-9845"   # online
+    issn_print: "0098-8847"
+
+  - name: Engineering with Computers
+    publisher: springer
+    crossref_issn: "1435-5663"   # electronic
+    issn_print: "0177-0667"
+
+pipeline:
+  lookback_days: 30
+  output_excel: "outputs/daily_papers.xlsx"
+  db_url: "sqlite:///data/papers.db"
+  
+crossref:
+  mailto: "senna_wang@emails.bjut.edu.cn"
+  timeout_sec: 30
+  per_page: 200
+  polite_sleep_sec: 1.0
+  
+download:
+  timeout_sec: 60
+  polite_sleep_sec: 1.0
+
+llm:
+  provider: "openai"
+  model: "qwen3.5-plus"
+  api_key_env: "DASHSCOPE_API_KEY"
+  base_url: "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1"
+  max_output_tokens: 900
+
+summarize:
+  limit_per_run: 3       # 每天免费额度就跑几篇
+  chunk_max_chars: 8000
+  max_chunks: 8
