@@ -10,7 +10,7 @@ import requests
 
 from core.download.link_fetcher import DownloadConfig, pick_text_mining_link, download_via_url
 from core.download.providers.base import DownloadContext, ProviderDownloader
-from core.download.providers import WileyDownloader, SpringerDownloader, ElsevierDownloader, AcmDownloader
+from core.download.providers import WileyDownloader, SpringerDownloader, ElsevierDownloader, IeeeDownloader
 
 
 @dataclass
@@ -41,14 +41,14 @@ class DownloadRouter:
             springer_api_key=os.getenv("SPRINGER_API_KEY", None),
             elsevier_api_key=os.getenv("ELSEVIER_API_KEY", None),
             elsevier_insttoken=os.getenv("ELSEVIER_INSTTOKEN", None),  # ✅ 新增
-            acm_api_key=os.getenv("ACM_API_KEY", None),
+            ieee_api_key=os.getenv("IEEE_API_KEY", None),
         )
 
         self.providers: List[ProviderDownloader] = [
             WileyDownloader(),
             SpringerDownloader(),
             ElsevierDownloader(),
-            AcmDownloader(),
+            IeeeDownloader(),
         ]
 
     @classmethod

@@ -7,20 +7,22 @@ from core.download.link_fetcher import download_via_url
 from core.download.providers.base import ProviderDownloader, DownloadContext
 
 
-class AcmDownloader(ProviderDownloader):
-    provider = "acm"
-    ACM_API_URL_TEMPLATE = "https://api.acm.org/dl/v1/articles/{doi}/fulltext"
+class IeeeDownloader(ProviderDownloader):
+    provider = "ieee"
+    IEEE_API_URL_TEMPLATE = (
+        "https://ieeexploreapi.ieee.org/api/v1/search/articles?doi={doi}&apikey={api_key}&format=xml"
+    )
 
     def can_handle(self, doi: str, article: Dict[str, Any]) -> bool:
         d = (doi or "").lower()
-        if d.startswith("10.1145/"):
+        if d.startswith("10.1109/"):
             return True
 
         publisher = (article.get("publisher") or "").lower()
-        return "association for computing machinery" in publisher or publisher == "acm"
+        return "ieee" in publisher or "institute of electrical and electronics engineers" in publisher
 
     def download(self, doi: str, article: Dict[str, Any], ctx: DownloadContext) -> Dict[str, Any]:
-        if not ctx.acm_api_key:
+        if not ctx.ieee_api_key:
             return {
                 "provider": self.provider,
                 "format": "xml",
@@ -28,18 +30,13 @@ class AcmDownloader(ProviderDownloader):
                 "sha256": "",
                 "status": "skipped",
                 "http_status": None,
-                "error": "missing ACM_API_KEY",
+                "error": "missing IEEE_API_KEY",
             }
 
         doi_enc = quote(doi, safe="")
-        url = self.ACM_API_URL_TEMPLATE.format(doi=doi_enc)
+        api_key_enc = quote(ctx.ieee_api_key, safe="")
+        url = self.IEEE_API_URL_TEMPLATE.format(doi=doi_enc, api_key=api_key_enc)
         out_dir = ctx.base_dir / "data" / "fulltext" / self.provider
-
-        headers = {
-            "Authorization": f"Bearer {ctx.acm_api_key}",
-            "X-ACM-API-Key": ctx.acm_api_key,
-            "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
-        }
 
         rec = download_via_url(
             doi,
@@ -47,7 +44,7 @@ class AcmDownloader(ProviderDownloader):
             out_dir=out_dir,
             cfg=ctx.cfg,
             session=ctx.session,
-            extra_headers=headers,
+            extra_headers={"Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8"},
             expected_ext=".xml",
         )
         rec["provider"] = self.provider

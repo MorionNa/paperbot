@@ -154,10 +154,10 @@ def _is_springer_doi(doi: str) -> bool:
     return d.startswith("10.1007/")
 
 
-def _is_acm_doi(doi: str, publisher: str = "") -> bool:
+def _is_ieee_doi(doi: str, publisher: str = "") -> bool:
     d = (doi or "").lower()
     p = (publisher or "").lower()
-    return d.startswith("10.1145/") or ("association for computing machinery" in p or p == "acm")
+    return d.startswith("10.1109/") or ("ieee" in p or "institute of electrical and electronics engineers" in p)
 
 
 def _sha256_file(p: Path) -> str:
@@ -399,14 +399,14 @@ def main():
             print(f"  -> springer {a['fulltext_status']} http={rec.get('http_status')} err={rec.get('error')}", flush=True)
             continue
 
-        # ✅ ACM：在 run_daily 中显式走专用下载分支（底层由 router 调用 AcmDownloader）
-        if _is_acm_doi(doi, a.get("publisher", "")):
+        # ✅ IEEE：在 run_daily 中显式走专用下载分支（底层由 router 调用 IeeeDownloader）
+        if _is_ieee_doi(doi, a.get("publisher", "")):
             rec = router.download(a)
             upsert_fulltext(conn, doi, rec)
 
             a["fulltext_status"] = rec.get("status", "")
             a["fulltext_path"] = rec.get("file_path", "")
-            print(f"  -> acm {a['fulltext_status']} http={rec.get('http_status')} err={rec.get('error')}", flush=True)
+            print(f"  -> ieee {a['fulltext_status']} http={rec.get('http_status')} err={rec.get('error')}", flush=True)
             continue
 
         rec = router.download(a)

@@ -20,7 +20,7 @@ class DownloadContext:
     springer_api_key: Optional[str] = None
     elsevier_api_key: Optional[str] = None
     elsevier_insttoken: Optional[str] = None
-    acm_api_key: Optional[str] = None
+    ieee_api_key: Optional[str] = None
 
 
 class ProviderDownloader:
