@@ -21,7 +21,6 @@ class DownloadContext:
     elsevier_api_key: Optional[str] = None
     elsevier_insttoken: Optional[str] = None
     acm_api_key: Optional[str] = None
-    acm_api_url_template: Optional[str] = None
 
 
 class ProviderDownloader:

@@ -9,6 +9,7 @@ from core.download.providers.base import ProviderDownloader, DownloadContext
 
 class AcmDownloader(ProviderDownloader):
     provider = "acm"
+    ACM_API_URL_TEMPLATE = "https://api.acm.org/dl/v1/articles/{doi}/fulltext"
 
     def can_handle(self, doi: str, article: Dict[str, Any]) -> bool:
         d = (doi or "").lower()
@@ -30,20 +31,8 @@ class AcmDownloader(ProviderDownloader):
                 "error": "missing ACM_API_KEY",
             }
 
-        url_template = ctx.acm_api_url_template or ""
-        if "{doi}" not in url_template:
-            return {
-                "provider": self.provider,
-                "format": "xml",
-                "file_path": "",
-                "sha256": "",
-                "status": "skipped",
-                "http_status": None,
-                "error": "missing/invalid ACM_API_URL_TEMPLATE (must contain {doi})",
-            }
-
         doi_enc = quote(doi, safe="")
-        url = url_template.format(doi=doi_enc)
+        url = self.ACM_API_URL_TEMPLATE.format(doi=doi_enc)
         out_dir = ctx.base_dir / "data" / "fulltext" / self.provider
 
         headers = {

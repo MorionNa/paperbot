@@ -20,15 +20,8 @@
 ### 需要配置的环境变量
 
 - `ACM_API_KEY`：ACM API token
-- `ACM_API_URL_TEMPLATE`：ACM API 地址模板，必须包含 `{doi}` 占位符
 
-示例：
-
-```bash
-export ACM_API_KEY="<your-acm-api-key>"
-export ACM_API_URL_TEMPLATE="https://api.acm.org/dl/v1/articles/{doi}/fulltext"
-```
-
-程序会对 DOI 做 URL 编码并替换 `{doi}`，以 `application/xml` 优先请求并保存到：
+程序会对 DOI 做 URL 编码，并使用内置 ACM API 地址模板
+`https://api.acm.org/dl/v1/articles/{doi}/fulltext` 请求全文，优先 `application/xml` 保存到：
 
 - `data/fulltext/acm/<doi_sha1>.xml`

@@ -31,18 +31,8 @@ class AcmDownloaderTests(unittest.TestCase):
         self.assertEqual(rec['status'], 'skipped')
         self.assertIn('ACM_API_KEY', rec['error'])
 
-    def test_download_requires_template_with_doi_placeholder(self):
-        ctx = DownloadContext(
-            base_dir=Path('.'),
-            session=_FakeSession(),
-            cfg=DownloadConfig(),
-            acm_api_key='test-key',
-            acm_api_url_template='https://api.acm.org/article',
-        )
-
-        rec = self.downloader.download('10.1145/1234567', {}, ctx)
-        self.assertEqual(rec['status'], 'skipped')
-        self.assertIn('ACM_API_URL_TEMPLATE', rec['error'])
+    def test_builtin_template_contains_doi_placeholder(self):
+        self.assertIn('{doi}', self.downloader.ACM_API_URL_TEMPLATE)
 
 
 if __name__ == '__main__':

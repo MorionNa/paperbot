@@ -42,7 +42,6 @@ class DownloadRouter:
             elsevier_api_key=os.getenv("ELSEVIER_API_KEY", None),
             elsevier_insttoken=os.getenv("ELSEVIER_INSTTOKEN", None),  # ✅ 新增
             acm_api_key=os.getenv("ACM_API_KEY", None),
-            acm_api_url_template=os.getenv("ACM_API_URL_TEMPLATE", None),
         )
 
         self.providers: List[ProviderDownloader] = [
