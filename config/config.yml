@@ -6,6 +6,95 @@ journals:
       - "1474-0346"   # pISSN（很多库这样标）
       - "0925-7535"   # 另一个常见 ISSN（有来源这样标）
     discover_date_filter: "update-date"
+    
+  - name: Engineering Structures
+    publisher: elsevier
+    crossref_issns:
+      - "1873-7323"  # eISSN
+      - "0141-0296"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:0]{index=0}
+
+  - name: Automation in Construction
+    publisher: elsevier
+    crossref_issns:
+      - "1872-7891"  # eISSN
+      - "0926-5805"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:1]{index=1}
+
+  - name: Journal of Building Engineering
+    publisher: elsevier
+    crossref_issns:
+      - "2352-7102"  # (ScienceDirect 标注为 Online ISSN)
+    discover_date_filter: "update-date"  # :contentReference[oaicite:2]{index=2}
+
+  - name: Structural Safety
+    publisher: elsevier
+    crossref_issns:
+      - "1879-3355"  # eISSN
+      - "0167-4730"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:3]{index=3}
+
+  - name: Computers in Industry
+    publisher: elsevier
+    crossref_issns:
+      - "1872-6194"  # eISSN
+      - "0166-3615"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:4]{index=4}
+
+  - name: Computer-Aided Civil and Infrastructure Engineering
+    publisher: wiley
+    crossref_issns:
+      - "1467-8667"  # eISSN
+      - "1093-9687"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:5]{index=5}
+
+  - name: Mechanical Systems and Signal Processing
+    publisher: elsevier
+    crossref_issns:
+      - "1096-1216"  # eISSN
+      - "0888-3270"  # pISSN (Linking ISSN)
+    discover_date_filter: "update-date"  # :contentReference[oaicite:6]{index=6}
+
+  - name: Engineering Applications of Artificial Intelligence
+    publisher: elsevier
+    crossref_issns:
+      - "1873-6769"  # eISSN
+      - "0952-1976"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:7]{index=7}
+
+  - name: Thin-Walled Structures
+    publisher: elsevier
+    crossref_issns:
+      - "1879-3223"  # eISSN
+      - "0263-8231"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:8]{index=8}
+
+  - name: Expert Systems with Applications
+    publisher: elsevier
+    crossref_issns:
+      - "1873-6793"  # eISSN
+      - "0957-4174"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:9]{index=9}
+
+  - name: Computer Methods in Applied Mechanics and Engineering
+    publisher: elsevier
+    crossref_issns:
+      - "1879-2138"  # eISSN
+      - "0045-7825"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:10]{index=10}
+
+  - name: Computers & Structures
+    publisher: elsevier
+    crossref_issns:
+      - "1879-2243"  # eISSN
+      - "0045-7949"  # pISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:11]{index=11}
+
+  - name: International Journal of Disaster Risk Reduction
+    publisher: elsevier
+    crossref_issns:
+      - "2212-4209"  # Online ISSN
+    discover_date_filter: "update-date"  # :contentReference[oaicite:12]{index=12}
 
   - name: Earthquake Engineering & Structural Dynamics
     publisher: wiley
@@ -31,6 +120,10 @@ crossref:
 download:
   timeout_sec: 60
   polite_sleep_sec: 1.0
+  
+  wiley_mode: "tdm_client"
+  wiley_limit_per_run: 30
+  wiley_run_dir: "data/wiley_tdm_runs"
 
 llm:
   provider: "openai"

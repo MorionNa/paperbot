@@ -1,20 +1,21 @@
 # app/run_daily.py
 from __future__ import annotations
+
 from datetime import date, timedelta, datetime
 from pathlib import Path
 import json
 import pandas as pd
 import os
 import yaml
+import csv
+from typing import Dict, List, Optional
+
 from core.download.router import DownloadRouter
 from infra.db import get_fulltext_status, upsert_fulltext
 from core.discover.crossref import CrossrefClient, CrossrefConfig, discover_recent_papers_for_journal
-from core.export.excel import export_new_articles_to_excel
 from infra.db import connect_sqlite, init_db, insert_articles
-from core.download.crossref_tdm import DownloadConfig, pick_text_mining_xml_link, download_xml_via_url
-from infra.db import get_fulltext_status, upsert_fulltext
-import requests
 from infra.secrets import load_secrets_into_env
+
 
 def _load_config(base_dir: Path) -> dict:
     cfg_path = base_dir / "config" / "config.yml"
@@ -23,15 +24,11 @@ def _load_config(base_dir: Path) -> dict:
 
 
 def _dated_output_path(base_dir: Path, pipeline_cfg: dict) -> Path:
-    """
-    If pipeline.output_excel is 'outputs/daily_papers.xlsx',
-    output becomes 'outputs/daily_papers_YYYY-MM-DD_HHMMSS.xlsx'
-    """
     raw = pipeline_cfg.get("output_excel", "outputs/daily_papers.xlsx")
     p = (base_dir / raw).resolve()
-
     ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     return p.with_name(f"{p.stem}_{ts}{p.suffix}")
+
 
 def _json_list_to_str(s: str) -> str:
     if not s:
@@ -47,8 +44,7 @@ def _json_list_to_str(s: str) -> str:
 
 def export_new_articles_with_summaries(conn, new_articles: list[dict], out_path: Path) -> None:
     """
-    导出“本次新增论文”的 Excel，并附带数据库里的总结字段（summaries）与全文下载字段（fulltexts）。
-    如果某篇还没总结/还没下载，对应列为空即可。
+    导出“本次新增论文”的 Excel，并附带 summaries 与 fulltexts 字段。
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -83,7 +79,7 @@ def export_new_articles_with_summaries(conn, new_articles: list[dict], out_path:
                 "summarized_at": summarized_at or "",
             }
 
-        # fulltexts（可选，但建议一起带上，方便你看哪些已下载/路径在哪）
+        # fulltexts
         f_rows = conn.execute(
             f"""
             SELECT doi, provider, format, file_path, status, http_status, error, downloaded_at
@@ -112,7 +108,6 @@ def export_new_articles_with_summaries(conn, new_articles: list[dict], out_path:
 
         rows.append(
             {
-                # 元数据
                 "published_date": a.get("published_date", ""),
                 "journal": a.get("journal", ""),
                 "publisher": a.get("publisher", ""),
@@ -122,7 +117,6 @@ def export_new_articles_with_summaries(conn, new_articles: list[dict], out_path:
                 "authors": "; ".join(a.get("authors") or []),
                 "subjects": "; ".join(a.get("subjects") or []),
 
-                # 全文下载状态
                 "fulltext_status": f.get("fulltext_status", a.get("fulltext_status", "")),
                 "fulltext_provider": f.get("fulltext_provider", ""),
                 "fulltext_format": f.get("fulltext_format", ""),
@@ -131,7 +125,6 @@ def export_new_articles_with_summaries(conn, new_articles: list[dict], out_path:
                 "fulltext_error": f.get("fulltext_error", ""),
                 "downloaded_at": f.get("downloaded_at", ""),
 
-                # 总结字段
                 "summary_status": s.get("summary_status", ""),
                 "summary_model": s.get("summary_model", ""),
                 "method_summary": s.get("method_summary", ""),
@@ -147,10 +140,192 @@ def export_new_articles_with_summaries(conn, new_articles: list[dict], out_path:
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="new_papers")
 
+
+# ------------------------
+# Wiley tdm-client helpers
+# ------------------------
+def _is_wiley_doi(doi: str) -> bool:
+    d = (doi or "").lower()
+    return d.startswith("10.1002/") or d.startswith("10.1111/")
+
+
+def _sha256_file(p: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _parse_results_csv(results_csv: Path, run_dir: Path) -> Dict[str, Path]:
+    """
+    兼容解析 wiley-tdm 输出的 results.csv，提取 doi -> file_path
+    """
+    mapping: Dict[str, Path] = {}
+    if not results_csv.exists():
+        return mapping
+
+    with results_csv.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames:
+            return mapping
+
+        fns = [x.lower() for x in reader.fieldnames]
+        doi_key = next((reader.fieldnames[i] for i, n in enumerate(fns) if "doi" in n), None)
+        path_key = next((reader.fieldnames[i] for i, n in enumerate(fns) if "path" in n or "file" in n), None)
+        status_key = next((reader.fieldnames[i] for i, n in enumerate(fns) if "status" in n), None)
+
+        for row in reader:
+            d = (row.get(doi_key) or "").strip() if doi_key else ""
+            p = (row.get(path_key) or "").strip() if path_key else ""
+            st = (row.get(status_key) or "").strip().lower() if status_key else ""
+            if not d or not p:
+                continue
+            if st and st not in ("ok", "success", "downloaded"):
+                continue
+
+            pp = Path(p)
+            if not pp.is_absolute():
+                pp = (run_dir / pp).resolve()
+            if pp.exists():
+                mapping[d] = pp
+
+    return mapping
+
+
+def _try_find_pdf_by_suffix(downloads_dir: Path, doi: str) -> Optional[Path]:
+    suffix = doi.split("/")[-1]
+    cands = list(downloads_dir.rglob(f"*{suffix}*.pdf"))
+    if not cands:
+        safe1 = doi.replace("/", "_")
+        safe2 = doi.replace("/", "-")
+        cands = list(downloads_dir.rglob(f"*{safe1}*.pdf")) + list(downloads_dir.rglob(f"*{safe2}*.pdf"))
+    if not cands:
+        return None
+    cands.sort(key=lambda p: p.stat().st_size, reverse=True)
+    return cands[0]
+
+
+def download_wiley_via_tdm_client(conn, base_dir: Path, cfg: dict, dois: List[str], articles: List[dict]) -> None:
+    """
+    使用 wiley-tdm 批量下载 Wiley PDF 并写入 fulltexts 表。
+    """
+    if not dois:
+        return
+
+    # wiley-tdm 使用 TDM_API_TOKEN
+    tok = (os.getenv("WILEY_TDM_CLIENT_TOKEN", "") or "").strip()
+    if tok and not os.getenv("TDM_API_TOKEN"):
+        os.environ["TDM_API_TOKEN"] = tok
+
+    if not os.getenv("TDM_API_TOKEN"):
+        for doi in dois:
+            upsert_fulltext(conn, doi, {
+                "provider": "wiley",
+                "format": "pdf",
+                "file_path": "",
+                "sha256": "",
+                "status": "skipped",
+                "http_status": None,
+                "error": "missing WILEY_TDM_CLIENT_TOKEN (and TDM_API_TOKEN)",
+                "downloaded_at": datetime.now().isoformat(timespec="seconds"),
+            })
+        for a in articles:
+            if a.get("doi") in set(dois):
+                a["fulltext_status"] = "skipped"
+                a["fulltext_path"] = ""
+        return
+
+    try:
+        from wiley_tdm import TDMClient
+    except Exception as e:
+        for doi in dois:
+            upsert_fulltext(conn, doi, {
+                "provider": "wiley",
+                "format": "pdf",
+                "file_path": "",
+                "sha256": "",
+                "status": "failed",
+                "http_status": None,
+                "error": f"wiley-tdm not installed/importable: {e!r}",
+                "downloaded_at": datetime.now().isoformat(timespec="seconds"),
+            })
+        return
+
+    dl_cfg = cfg.get("download", {}) or {}
+    run_root = dl_cfg.get("wiley_run_dir", "data/wiley_tdm_runs")
+    run_dir = (base_dir / run_root / datetime.now().strftime("%Y-%m-%d_%H%M%S")).resolve()
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    dois_file = run_dir / "dois.txt"
+    dois_file.write_text("\n".join(dois), encoding="utf-8")
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(run_dir)
+        tdm = TDMClient()
+        tdm.download_pdfs(str(dois_file))
+        tdm.save_results()
+    finally:
+        os.chdir(old_cwd)
+
+    downloads_dir = run_dir / "downloads"
+    results_csv = run_dir / "results.csv"
+    csv_map = _parse_results_csv(results_csv, run_dir)
+
+    ok = 0
+    doi_set = set(dois)
+
+    for doi in dois:
+        p = csv_map.get(doi) or _try_find_pdf_by_suffix(downloads_dir, doi)
+        if p is None or not p.exists():
+            upsert_fulltext(conn, doi, {
+                "provider": "wiley",
+                "format": "pdf",
+                "file_path": "",
+                "sha256": "",
+                "status": "failed",
+                "http_status": None,
+                "error": "wiley-tdm: file not found after download",
+                "downloaded_at": datetime.now().isoformat(timespec="seconds"),
+            })
+            continue
+
+        upsert_fulltext(conn, doi, {
+            "provider": "wiley",
+            "format": "pdf",
+            "file_path": str(p),
+            "sha256": _sha256_file(p),
+            "status": "ok",
+            "http_status": 200,
+            "error": "",
+            "downloaded_at": datetime.now().isoformat(timespec="seconds"),
+        })
+        ok += 1
+
+    # 回写到 all_new 里，方便导出
+    for a in articles:
+        d = (a.get("doi") or "").strip()
+        if d in doi_set:
+            p = csv_map.get(d) or _try_find_pdf_by_suffix(downloads_dir, d)
+            if p and p.exists():
+                a["fulltext_status"] = "ok"
+                a["fulltext_path"] = str(p)
+            else:
+                a["fulltext_status"] = "failed"
+                a["fulltext_path"] = ""
+
+    print(f"[Wiley tdm-client] ok={ok}/{len(dois)} run_dir={run_dir}", flush=True)
+
+
 def main():
-    base_dir = Path(__file__).resolve().parents[1]  # E:\paperbot
-    load_secrets_into_env(base_dir)  # ✅ 加这一行，确保 ELSEVIER_API_KEY 进入 os.environ
+    base_dir = Path(__file__).resolve().parents[1]
+    load_secrets_into_env(base_dir)
+
     print("ELSEVIER_API_KEY len =", len(os.getenv("ELSEVIER_API_KEY", "")), flush=True)
+    print("WILEY_TDM_CLIENT_TOKEN len =", len(os.getenv("WILEY_TDM_CLIENT_TOKEN", "")), flush=True)
+
     cfg = _load_config(base_dir)
 
     lookback = int(cfg["pipeline"]["lookback_days"])
@@ -166,19 +341,24 @@ def main():
     )
     client = CrossrefClient(cr_cfg)
 
-    # DB
     conn = connect_sqlite(cfg["pipeline"]["db_url"], base_dir)
     init_db(conn)
 
-    all_new = []
+    all_new: List[dict] = []
     for j in cfg["journals"]:
         items = discover_recent_papers_for_journal(client, j, from_d, until_d)
         new_items = insert_articles(conn, items)
         print(f"[{j['name']}] fetched={len(items)} inserted(new)={len(new_items)}")
         all_new.extend(new_items)
 
-    # ---- Fulltext download (XML first) ----
+    # ---- Fulltext download ----
     router = DownloadRouter.from_app_config(base_dir, cfg)
+
+    dl_cfg = cfg.get("download", {}) or {}
+    wiley_mode = (dl_cfg.get("wiley_mode") or "tdm_client").lower()
+    wiley_limit = int(dl_cfg.get("wiley_limit_per_run", 30))
+
+    wiley_pending: List[str] = []
 
     for idx, a in enumerate(all_new, 1):
         doi = a["doi"]
@@ -190,12 +370,25 @@ def main():
             print("  -> already ok", flush=True)
             continue
 
+        # ✅ Wiley：先收集，循环后用 tdm-client 批量下载
+        if wiley_mode == "tdm_client" and _is_wiley_doi(doi):
+            wiley_pending.append(doi)
+            a["fulltext_status"] = "pending_wiley"
+            a["fulltext_path"] = ""
+            print("  -> pending (wiley tdm-client)", flush=True)
+            continue
+
         rec = router.download(a)
         upsert_fulltext(conn, doi, rec)
 
         a["fulltext_status"] = rec.get("status", "")
         a["fulltext_path"] = rec.get("file_path", "")
         print(f"  -> {a['fulltext_status']} http={rec.get('http_status')} err={rec.get('error')}", flush=True)
+
+    # ✅ Wiley 批量下载（限制每日数量）
+    if wiley_pending:
+        wiley_pending = wiley_pending[:wiley_limit]
+        download_wiley_via_tdm_client(conn, base_dir, cfg, wiley_pending, all_new)
 
     out_path = _dated_output_path(base_dir, cfg["pipeline"])
     export_new_articles_with_summaries(conn, all_new, out_path)

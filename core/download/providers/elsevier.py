@@ -40,7 +40,7 @@ class ElsevierDownloader(ProviderDownloader):
             headers["X-ELS-Insttoken"] = ctx.elsevier_insttoken
 
         # ✅ XML 优先
-        url_xml = f"https://api.elsevier.com/content/article/doi/{doi_enc}?httpAccept=application/xml"
+        url_xml = f"https://api.elsevier.com/content/article/doi/{doi_enc}?httpAccept=application/xml&view=FULL"
         rec = download_via_url(
             doi,
             url_xml,

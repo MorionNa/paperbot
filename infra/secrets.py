@@ -7,7 +7,6 @@ from typing import Optional
 
 import yaml
 
-
 def load_secrets_into_env(base_dir: Path, rel_path: str = "config/secrets.yml") -> None:
     """
     Load secrets from YAML and set into os.environ for SDKs to read.
@@ -27,6 +26,7 @@ def load_secrets_into_env(base_dir: Path, rel_path: str = "config/secrets.yml") 
         "dashscope_api_key": "DASHSCOPE_API_KEY",  # 加这行
         "elsevier_api_key": "ELSEVIER_API_KEY",
         "elsevier_insttoken": "ELSEVIER_INSTTOKEN",
+        "wiley_tdm_client_token": "WILEY_TDM_CLIENT_TOKEN",
     }
 
     for k, env_name in mapping.items():
