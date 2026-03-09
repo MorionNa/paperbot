@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,25 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
+
+
+def safe_file_stem(text: str, fallback: str, max_len: int = 120) -> str:
+    """
+    Build a filesystem-safe filename stem from text.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return fallback
+
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]+', ' ', raw)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().rstrip('.')
+    if not cleaned:
+        return fallback
+
+    if len(cleaned) > max_len:
+        cleaned = cleaned[:max_len].rstrip()
+    return cleaned or fallback
 
 def pick_text_mining_link(raw: Dict[str, Any], prefer_xml: bool = True) -> Optional[Tuple[str, str]]:
     """
@@ -69,13 +89,15 @@ def download_via_url(
     session: Optional[requests.Session] = None,
     extra_headers: Optional[Dict[str, str]] = None,
     expected_ext: str = ".xml",
+    file_stem: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Download content to data/fulltext/<provider>/<sha1>.xml (default).
+    Download content to data/fulltext/<provider>/<title_or_sha1>.xml (default).
     Returns a dict suitable for upsert_fulltext().
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    fname = doi_sha1(doi) + expected_ext
+    stem = safe_file_stem(file_stem or "", fallback=doi_sha1(doi))
+    fname = stem + expected_ext
     fpath = out_dir / fname
     tmp_path = out_dir / (fname + ".part")
 

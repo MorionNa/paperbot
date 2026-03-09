@@ -49,6 +49,7 @@ class ElsevierDownloader(ProviderDownloader):
             session=ctx.session,
             extra_headers=headers,
             expected_ext=".xml",
+            file_stem=article.get("title", ""),
         )
         rec["provider"] = self.provider
         return rec

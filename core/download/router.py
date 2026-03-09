@@ -103,6 +103,7 @@ class DownloadRouter:
             session=self.session,
             extra_headers=None,
             expected_ext=".xml",
+            file_stem=article.get("title", ""),
         )
         rec["provider"] = "crossref"
         return rec

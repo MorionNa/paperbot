@@ -24,7 +24,7 @@ class SpringerDownloader(ProviderDownloader):
         # 先尝试 TDM
         tdm_api_key = getattr(ctx, "springer_api_key", None)
         if tdm_api_key:
-            rec = self._download_tdm_xml(doi, ctx, tdm_api_key)
+            rec = self._download_tdm_xml(doi, article, ctx, tdm_api_key)
             if rec.get("status") == "ok":
                 return rec
             # 如果失败，fall back 到 PDF
@@ -32,7 +32,7 @@ class SpringerDownloader(ProviderDownloader):
         # 原 MVP PDF 下载逻辑
         return self._download_mvp_pdf(doi, article, ctx)
 
-    def _download_tdm_xml(self, doi: str, ctx: DownloadContext, api_key: str) -> Dict[str, Any]:
+    def _download_tdm_xml(self, doi: str, article: Dict[str, Any], ctx: DownloadContext, api_key: str) -> Dict[str, Any]:
         """
         Springer TDM JATS XML 下载
         """
@@ -50,6 +50,7 @@ class SpringerDownloader(ProviderDownloader):
                 session=ctx.session,
                 extra_headers={"Accept": "application/xml"},
                 expected_ext=".xml",
+                file_stem=article.get("title", ""),
             )
             rec["provider"] = "springer_tdm"
             rec["format"] = "xml"
@@ -92,6 +93,7 @@ class SpringerDownloader(ProviderDownloader):
                 session=ctx.session,
                 extra_headers={"Accept": "application/pdf"},
                 expected_ext=".pdf",
+                file_stem=article.get("title", ""),
             )
             rec["provider"] = self.provider
             rec["format"] = "pdf"

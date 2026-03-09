@@ -50,6 +50,7 @@ class WileyDownloader(ProviderDownloader):
             session=ctx.session,
             extra_headers={"Wiley-TDM-Client-Token": ctx.wiley_token},
             expected_ext=".xml",
+            file_stem=article.get("title", ""),
         )
         rec["provider"] = self.provider
         return rec

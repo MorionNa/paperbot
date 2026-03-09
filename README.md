@@ -43,3 +43,9 @@
   - 环境变量：无必填（可配 Crossref mailto 等发现参数）
   - 下载机制：从 Crossref `raw.link` 中选择 `intended-application=text-mining` 链接（优先 XML）下载。
   - 典型存储：`data/fulltext/crossref/<doi_sha1>.xml`。
+
+
+## 文件命名规则
+
+- 下载文件优先使用论文标题作为文件名（会自动清理不合法字符并截断）。
+- 若标题为空或清理后为空，则回退为 DOI 的 SHA1。

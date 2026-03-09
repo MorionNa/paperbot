@@ -46,6 +46,7 @@ class IeeeDownloader(ProviderDownloader):
             session=ctx.session,
             extra_headers={"Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8"},
             expected_ext=".xml",
+            file_stem=article.get("title", ""),
         )
         rec["provider"] = self.provider
         rec["format"] = "xml"
