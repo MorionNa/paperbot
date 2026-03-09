@@ -1,5 +1,57 @@
 # paperbot
 
+## 使用方法
+
+### 1) 准备配置
+
+1. 安装依赖（建议在虚拟环境中）。
+2. 配置 `config/config.yml`，至少包含：
+   - `pipeline.db_url`
+   - `pipeline.journals`
+   - `pipeline.lookback_days`（或 `pipeline.date_from` + `pipeline.date_until`）
+   - `summarize.*`
+   - `llm.*`
+3. 在 `.env`（或你的环境变量）中配置密钥。`run_daily.py` / `summarize_papers.py` 启动时会调用 `load_secrets_into_env` 自动加载。
+
+---
+
+### 2) 运行 `run_daily.py`（发现论文 + 下载全文 + 导出 Excel）
+
+在仓库根目录执行：
+
+```bash
+python app/run_daily.py
+```
+
+脚本会完成以下步骤：
+
+- 从 `config/config.yml` 读取 pipeline 配置。
+- 按期刊与时间范围抓取论文元数据并写入 SQLite（`articles`）。
+- 根据 DOI / publisher 路由下载全文并写入 `fulltexts`。
+- 导出“本次新增论文”的 Excel（文件名自动附加时间戳，默认在 `outputs/` 下）。
+
+时间范围控制：
+
+- 默认：`pipeline.lookback_days`
+- 指定区间：同时设置 `pipeline.date_from` 与 `pipeline.date_until`（`YYYY-MM-DD`）
+
+---
+
+### 3) 运行 `summarize_papers.py`（对已解析正文做结构化总结）
+
+在仓库根目录执行：
+
+```bash
+python app/summarize_papers.py
+```
+
+说明：
+
+- 该脚本会读取 `parsed_texts` 中尚未成功总结（`summaries.status != 'ok'`）且正文长度足够的记录。
+- 先分块生成 chunk 摘要，再合并生成结构化 JSON（`method_summary` / `result_summary` / `keywords` / `tags` 等）。
+- 结果写入 `summaries` 表（成功为 `ok`，失败为 `failed`）。
+- 每次处理上限由 `config.yml` 的 `summarize.limit_per_run` 控制。
+
 ## Fulltext 下载能力
 
 当前下载路由支持以下 publisher/API：
