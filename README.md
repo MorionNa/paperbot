@@ -11,7 +11,19 @@
    - `pipeline.lookback_days`（或 `pipeline.date_from` + `pipeline.date_until`）
    - `summarize.*`
    - `llm.*`
-3. 在 `.env`（或你的环境变量）中配置密钥。`run_daily.py` / `summarize_papers.py` 启动时会调用 `load_secrets_into_env` 自动加载。
+3. 创建并配置 `config/secrets.yml`（推荐），脚本启动时会自动加载到环境变量。示例：
+
+```yaml
+openai_api_key: "<your-openai-key>"
+gemini_api_key: "<your-gemini-key>"
+anthropic_api_key: "<your-anthropic-key>"
+dashscope_api_key: "<your-dashscope-key>"
+elsevier_api_key: "<your-elsevier-key>"
+elsevier_insttoken: "<optional-insttoken>"
+wiley_tdm_client_token: "<your-wiley-tdm-token>"
+```
+
+4. 如需 IEEE 下载，请额外在环境变量中设置 `IEEE_API_KEY`（`secrets.yml` 当前未映射该字段）。
 
 ---
 
