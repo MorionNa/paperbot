@@ -30,6 +30,39 @@ def _dated_output_path(base_dir: Path, pipeline_cfg: dict) -> Path:
     return p.with_name(f"{p.stem}_{ts}{p.suffix}")
 
 
+
+
+def _parse_iso_date(value: str, field_name: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except Exception as e:
+        raise ValueError(f"invalid {field_name}: {value!r}, expected YYYY-MM-DD") from e
+
+
+def _resolve_date_range(pipeline_cfg: dict) -> tuple[date, date]:
+    """
+    解析抓取区间：
+    1) 若配置了 date_from/date_until，则按指定区间抓取；
+    2) 否则回退到 lookback_days（默认行为）。
+    """
+    date_from_raw = (pipeline_cfg.get("date_from") or "").strip()
+    date_until_raw = (pipeline_cfg.get("date_until") or "").strip()
+
+    if date_from_raw and date_until_raw:
+        from_d = _parse_iso_date(date_from_raw, "pipeline.date_from")
+        until_d = _parse_iso_date(date_until_raw, "pipeline.date_until")
+    elif date_from_raw or date_until_raw:
+        raise ValueError("pipeline.date_from and pipeline.date_until must be set together")
+    else:
+        lookback = int(pipeline_cfg.get("lookback_days", 30))
+        until_d = date.today()
+        from_d = until_d - timedelta(days=lookback)
+
+    if from_d > until_d:
+        raise ValueError(f"invalid date range: date_from({from_d}) > date_until({until_d})")
+
+    return from_d, until_d
+
 def _json_list_to_str(s: str) -> str:
     if not s:
         return ""
@@ -339,9 +372,8 @@ def main():
 
     cfg = _load_config(base_dir)
 
-    lookback = int(cfg["pipeline"]["lookback_days"])
-    until_d = date.today()
-    from_d = until_d - timedelta(days=lookback)
+    from_d, until_d = _resolve_date_range(cfg["pipeline"])
+    print(f"[DATE RANGE] from={from_d} until={until_d}", flush=True)
 
     cr_cfg_dict = cfg.get("crossref", {}) or {}
     cr_cfg = CrossrefConfig(

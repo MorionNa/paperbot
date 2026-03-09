@@ -49,3 +49,24 @@
 
 - 下载文件优先使用论文标题作为文件名（会自动清理不合法字符并截断）。
 - 若标题为空或清理后为空，则回退为 DOI 的 SHA1。
+
+
+## 按时间范围下载论文
+
+`run_daily.py` 现在支持两种时间窗口配置：
+
+- 默认模式：使用 `pipeline.lookback_days`（例如最近 30 天）
+- 指定区间模式：同时设置 `pipeline.date_from` 和 `pipeline.date_until`（格式 `YYYY-MM-DD`）
+
+示例（`config/config.yml`）：
+
+```yaml
+pipeline:
+  lookback_days: 30
+  date_from: "2024-01-01"
+  date_until: "2024-01-31"
+```
+
+说明：
+- 当 `date_from/date_until` 同时存在时，会覆盖 `lookback_days`。
+- 两者必须同时配置，且 `date_from <= date_until`。

@@ -108,6 +108,9 @@ journals:
 
 pipeline:
   lookback_days: 30
+  # 可选：固定时间范围抓取（YYYY-MM-DD）；若填写则覆盖 lookback_days
+  # date_from: "2024-01-01"
+  # date_until: "2024-01-31"
   output_excel: "outputs/daily_papers.xlsx"
   db_url: "sqlite:///data/papers.db"
   
