@@ -16,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BASE_DIR / "config" / "config.yml"
 SECRETS_PATH = BASE_DIR / "config" / "secrets.yml"
 PUBLISHERS = ["elsevier", "wiley", "springer", "ieee", "other"]
+UNIFIED_BG = "#f2f3f5"
 
 
 def _date_options(days_back: int = 3650, days_forward: int = 365) -> list[str]:
@@ -125,12 +126,12 @@ class PaperBotGUI:
         if "clam" in style.theme_names():
             style.theme_use("clam")
 
-        style.configure("Sidebar.TFrame", background="#eef2f7")
-        style.configure("Main.TFrame", background="#f3f5f9")
+        style.configure("Sidebar.TFrame", background=UNIFIED_BG)
+        style.configure("Main.TFrame", background=UNIFIED_BG)
         style.configure("Card.TLabelframe", background="#ffffff")
         style.configure("Card.TLabelframe.Label", background="#ffffff", font=("Microsoft YaHei", 12, "bold"))
-        style.configure("Header.TLabel", background="#f5f7fb", font=("Microsoft YaHei", 19, "bold"), foreground="#0f172a")
-        style.configure("SubHeader.TLabel", background="#f5f7fb", font=("Microsoft YaHei", 18, "bold"), foreground="#111827")
+        style.configure("Header.TLabel", background=UNIFIED_BG, font=("Microsoft YaHei", 19, "bold"), foreground="#0f172a")
+        style.configure("SubHeader.TLabel", background=UNIFIED_BG, font=("Microsoft YaHei", 18, "bold"), foreground="#111827")
         style.configure("Menu.TButton", font=("Microsoft YaHei", 13), padding=(12, 8))
         style.configure("MenuActive.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(12, 8), foreground="#1d4ed8")
         style.configure("Primary.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(16, 10))
@@ -154,13 +155,13 @@ class PaperBotGUI:
         ttk.Label(
             self.sidebar,
             text="论文库下载工具",
-            background="#eef2f7",
+            background=UNIFIED_BG,
             font=("Microsoft YaHei", 20, "bold"),
         ).pack(anchor=tk.W, padx=26, pady=(28, 2))
         ttk.Label(
             self.sidebar,
             text="Paper Downloader",
-            background="#eef2f7",
+            background=UNIFIED_BG,
             foreground="#64748b",
             font=("Microsoft YaHei", 13),
         ).pack(anchor=tk.W, padx=26, pady=(0, 24))
@@ -170,7 +171,7 @@ class PaperBotGUI:
         ttk.Button(self.sidebar, text="⬇️  下载任务", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
         ttk.Button(self.sidebar, text="⚙️  系统设置", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
 
-        ttk.Label(self.sidebar, text="Version 1.0", background="#eef2f7", foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
+        ttk.Label(self.sidebar, text="Version 1.0", background=UNIFIED_BG, foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
 
     def _build_main(self) -> None:
         top_wrap = ttk.Frame(self.main, style="Main.TFrame")
@@ -252,16 +253,16 @@ class PaperBotGUI:
         for i, (title, var, url) in enumerate(rows):
             row = ttk.Frame(parent)
             row.pack(fill=tk.X, pady=8)
-            title_row = tk.Frame(row, bg="#f2f3f5")
+            title_row = tk.Frame(row, bg=UNIFIED_BG)
             title_row.pack(fill=tk.X)
-            tk.Label(title_row, text=f"{title}", font=("Microsoft YaHei", 12, "bold"), bg="#f2f3f5").pack(side=tk.LEFT)
+            tk.Label(title_row, text=f"{title}", font=("Microsoft YaHei", 12, "bold"), bg=UNIFIED_BG).pack(side=tk.LEFT)
             link = tk.Label(
                 title_row,
                 text=f"点我获取{title}",
                 fg="#2563eb",
                 cursor="hand2",
                 font=("Microsoft YaHei", 10, "underline"),
-                bg="#f2f3f5",
+                bg=UNIFIED_BG,
             )
             link.pack(side=tk.LEFT, padx=(10, 0))
             link.bind("<Button-1>", lambda _e, u=url: self.open_api_link(u))
