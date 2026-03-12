@@ -353,7 +353,7 @@ class PaperBotGUI:
         ttk.Entry(cfg, textvariable=self.summary_base_url, width=78).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=5)
 
         ttk.Label(cfg, text="API Key").grid(row=2, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(cfg, textvariable=self.summary_api_key, show="*", width=78).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=5)
+        ttk.Entry(cfg, textvariable=self.summary_api_key, width=78).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=5)
 
         ttk.Label(cfg, text="最大输出 token").grid(row=3, column=0, sticky=tk.W, pady=5)
         ttk.Entry(cfg, textvariable=self.summary_max_tokens, width=20).grid(row=3, column=1, sticky=tk.W, padx=8, pady=5)
@@ -429,7 +429,7 @@ class PaperBotGUI:
 
             entry_row = ttk.Frame(row)
             entry_row.pack(fill=tk.X, pady=(2, 0))
-            ttk.Entry(entry_row, textvariable=var, show="*", width=42).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ttk.Entry(entry_row, textvariable=var, width=42).pack(side=tk.LEFT, fill=tk.X, expand=True)
             ttk.Label(entry_row, text="✅", foreground="#10b981", font=("Microsoft YaHei", 14)).pack(side=tk.LEFT, padx=8)
 
         ttk.Button(parent, text="✔ 保存", command=self.on_save_provider_keys, style="Success.TButton").pack(anchor=tk.E, pady=(18, 0))
