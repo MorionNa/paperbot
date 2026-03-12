@@ -252,12 +252,15 @@ class PaperBotGUI:
             row = ttk.Frame(parent)
             row.pack(fill=tk.X, pady=8)
             ttk.Label(row, text=f"{title}", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
-            ttk.Button(
+            link = tk.Label(
                 row,
                 text=f"点我获取{title}",
-                style="Menu.TButton",
-                command=lambda u=url: self.open_api_link(u),
-            ).pack(anchor=tk.W, pady=(2, 4))
+                fg="#2563eb",
+                cursor="hand2",
+                font=("Microsoft YaHei", 10, "underline"),
+            )
+            link.pack(anchor=tk.W, pady=(2, 4))
+            link.bind("<Button-1>", lambda _e, u=url: self.open_api_link(u))
             entry_row = ttk.Frame(row)
             entry_row.pack(fill=tk.X, pady=(2, 0))
             ttk.Entry(entry_row, textvariable=var, show="*", width=42).pack(side=tk.LEFT, fill=tk.X, expand=True)
