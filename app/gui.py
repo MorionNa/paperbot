@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+import webbrowser
 from datetime import date, timedelta
 from pathlib import Path
 import tkinter as tk
@@ -180,7 +181,7 @@ class PaperBotGUI:
         left = ttk.LabelFrame(upper, text="期刊信息", padding=14, style="Card.TLabelframe")
         left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
 
-        right = ttk.LabelFrame(upper, text="API Key 管理", padding=14, style="Card.TLabelframe")
+        right = ttk.LabelFrame(upper, text="text and data mining API key管理", padding=14, style="Card.TLabelframe")
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
         self._build_journal_panel(left)
@@ -215,7 +216,7 @@ class PaperBotGUI:
 
         btn_row = ttk.Frame(parent)
         btn_row.pack(fill=tk.X, pady=(8, 10))
-        ttk.Button(btn_row, text="＋ 添加到 config.yml", command=self.on_add_journal, style="Primary.TButton").pack(side=tk.LEFT)
+        ttk.Button(btn_row, text="＋ 添加", command=self.on_add_journal, style="Primary.TButton").pack(side=tk.LEFT)
         ttk.Button(btn_row, text="删除选中", command=self.on_delete_journal).pack(side=tk.LEFT, padx=8)
 
         ttk.Label(parent, text="已添加期刊", font=("Microsoft YaHei", 13, "bold")).pack(anchor=tk.W, pady=(4, 6))
@@ -241,18 +242,24 @@ class PaperBotGUI:
         self.ieee_key = tk.StringVar()
 
         rows = [
-            ("Elsevier API", self.elsevier_key),
-            ("Wiley API", self.wiley_key),
-            ("Springer API", self.springer_key),
-            ("IEEE API", self.ieee_key),
+            ("Elsevier API", self.elsevier_key, "https://dev.elsevier.com/apikey/manage"),
+            ("Wiley API", self.wiley_key, "https://onlinelibrary.wiley.com/library-info/resources/text-and-datamining"),
+            ("Springer API", self.springer_key, "https://dev.springernature.com/"),
+            ("IEEE API", self.ieee_key, "https://developer.ieee.org/"),
         ]
 
-        for i, (title, var) in enumerate(rows):
+        for i, (title, var, url) in enumerate(rows):
             row = ttk.Frame(parent)
             row.pack(fill=tk.X, pady=8)
             ttk.Label(row, text=f"{title}", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+            ttk.Button(
+                row,
+                text=f"点我获取{title}",
+                style="Menu.TButton",
+                command=lambda u=url: self.open_api_link(u),
+            ).pack(anchor=tk.W, pady=(2, 4))
             entry_row = ttk.Frame(row)
-            entry_row.pack(fill=tk.X, pady=(4, 0))
+            entry_row.pack(fill=tk.X, pady=(2, 0))
             ttk.Entry(entry_row, textvariable=var, show="*", width=42).pack(side=tk.LEFT, fill=tk.X, expand=True)
             ttk.Label(entry_row, text="✅", foreground="#10b981", font=("Microsoft YaHei", 14)).pack(side=tk.LEFT, padx=8)
 
@@ -353,6 +360,13 @@ class PaperBotGUI:
         self.refresh_journal_table()
         self.log(f"• 已删除期刊：{values[0] if values else idx}")
 
+    def open_api_link(self, url: str) -> None:
+        try:
+            webbrowser.open_new(url)
+            self.log(f"• 已打开链接：{url}")
+        except Exception as e:
+            messagebox.showerror("打开失败", f"无法打开链接：{e}")
+
     def on_save_keys(self) -> None:
         _save_api_keys(
             elsevier_key=self.elsevier_key.get(),
@@ -375,7 +389,7 @@ class PaperBotGUI:
         self.log(result.stderr or "(empty)")
 
         if result.returncode == 0:
-            messagebox.showinfo("完成", "run_daily.py 执行成功")
+            messagebox.showinfo("完成", "下载完成")
         else:
             messagebox.showerror("失败", f"run_daily.py 失败，返回码={result.returncode}")
 
