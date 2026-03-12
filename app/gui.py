@@ -141,22 +141,33 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
         try:
             rows = conn.execute(
                 """
-                SELECT a.published_date, a.title, a.journal, a.doi, COALESCE(f.status, '')
-                FROM articles a
-                LEFT JOIN fulltexts f ON f.doi = a.doi
-                ORDER BY a.published_date DESC, a.rowid DESC
+                SELECT
+                  COALESCE(a.published_date, ''),
+                  COALESCE(a.title, ''),
+                  COALESCE(a.journal, ''),
+                  f.doi,
+                  COALESCE(f.status, '')
+                FROM fulltexts f
+                LEFT JOIN articles a ON a.doi = f.doi
+                WHERE lower(COALESCE(f.status, '')) IN ('ok', 'success', 'downloaded')
+                ORDER BY COALESCE(f.downloaded_at, '') DESC, f.rowid DESC
                 LIMIT ?
                 """,
                 (limit,),
             ).fetchall()
         except sqlite3.OperationalError:
-            # 兼容部分历史/非标准库结构，退化到不依赖 rowid/id 的排序
+            # 兼容部分历史/非标准库结构，退化到更宽松查询
             rows = conn.execute(
                 """
-                SELECT a.published_date, a.title, a.journal, a.doi, COALESCE(f.status, '')
-                FROM articles a
-                LEFT JOIN fulltexts f ON f.doi = a.doi
-                ORDER BY a.published_date DESC
+                SELECT
+                  COALESCE(a.published_date, ''),
+                  COALESCE(a.title, ''),
+                  COALESCE(a.journal, ''),
+                  f.doi,
+                  COALESCE(f.status, '')
+                FROM fulltexts f
+                LEFT JOIN articles a ON a.doi = f.doi
+                ORDER BY COALESCE(f.downloaded_at, '') DESC
                 LIMIT ?
                 """,
                 (limit,),
