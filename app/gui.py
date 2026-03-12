@@ -18,6 +18,13 @@ CONFIG_PATH = BASE_DIR / "config" / "config.yml"
 SECRETS_PATH = BASE_DIR / "config" / "secrets.yml"
 PUBLISHERS = ["elsevier", "wiley", "springer", "ieee", "other"]
 UNIFIED_BG = "#f2f3f5"
+SUMMARY_API_PROVIDERS = {
+    "custom": ("CUSTOM_LLM_API_KEY", "custom_llm_api_key"),
+    "openai": ("OPENAI_API_KEY", "openai_api_key"),
+    "dashscope": ("DASHSCOPE_API_KEY", "dashscope_api_key"),
+    "gemini": ("GEMINI_API_KEY", "gemini_api_key"),
+    "anthropic": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
+}
 
 
 def _load_yaml(path: Path) -> dict:
@@ -32,14 +39,21 @@ def _save_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
-def _append_journal(name: str, short_name: str, publisher: str, issn: str) -> None:
+def _append_journal(name: str, short_name: str, publisher: str, issn_print: str, issn_online: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     journals = cfg.setdefault("journals", [])
     journal = {"name": name.strip(), "publisher": publisher.strip().lower()}
     if short_name.strip():
         journal["short_name"] = short_name.strip()
-    if issn.strip():
-        journal["crossref_issn"] = issn.strip()
+    if issn_print.strip():
+        journal["issn_print"] = issn_print.strip()
+    if issn_online.strip():
+        journal["issn_online"] = issn_online.strip()
+    if not journal.get("crossref_issn"):
+        if issn_online.strip():
+            journal["crossref_issn"] = issn_online.strip()
+        elif issn_print.strip():
+            journal["crossref_issn"] = issn_print.strip()
     journals.append(journal)
     _save_yaml(CONFIG_PATH, cfg)
 
@@ -71,18 +85,22 @@ def _save_provider_api_keys(elsevier_key: str, wiley_key: str, springer_key: str
     _save_yaml(SECRETS_PATH, secrets)
 
 
-def _save_summary_llm_config(base_url: str, api_key: str, max_tokens: str) -> None:
+def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tokens: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     llm = cfg.setdefault("llm", {})
+    provider = (provider or "custom").strip().lower()
+    env_name, secret_key = SUMMARY_API_PROVIDERS.get(provider, SUMMARY_API_PROVIDERS["custom"])
+
+    llm["provider"] = provider
     llm["base_url"] = base_url.strip()
-    llm["api_key_env"] = "CUSTOM_LLM_API_KEY"
+    llm["api_key_env"] = env_name
     if max_tokens.strip():
         llm["max_output_tokens"] = int(max_tokens.strip())
     _save_yaml(CONFIG_PATH, cfg)
 
     secrets = _load_yaml(SECRETS_PATH)
     if api_key.strip():
-        secrets["custom_llm_api_key"] = api_key.strip()
+        secrets[secret_key] = api_key.strip()
     _save_yaml(SECRETS_PATH, secrets)
 
 
@@ -92,6 +110,8 @@ def _load_saved_gui_settings() -> dict:
     cfg = _load_yaml(CONFIG_PATH)
     sec = _load_yaml(SECRETS_PATH)
     llm = cfg.get("llm") or {}
+    provider = str(llm.get("provider") or "custom").strip().lower()
+    env_name, secret_key = SUMMARY_API_PROVIDERS.get(provider, SUMMARY_API_PROVIDERS["custom"])
     return {
         "elsevier_api_key": sec.get("elsevier_api_key", ""),
         "wiley_tdm_client_token": sec.get("wiley_tdm_client_token", ""),
@@ -99,7 +119,9 @@ def _load_saved_gui_settings() -> dict:
         "ieee_api_key": sec.get("ieee_api_key", ""),
         "summary_base_url": llm.get("base_url", ""),
         "summary_max_tokens": str(llm.get("max_output_tokens", "") or ""),
-        "summary_api_key": sec.get("custom_llm_api_key", ""),
+        "summary_provider": provider,
+        "summary_api_key": sec.get(secret_key, sec.get("custom_llm_api_key", "")),
+        "summary_api_env": env_name,
     }
 
 def _set_date_range(date_from: str, date_until: str) -> None:
@@ -248,6 +270,7 @@ class PaperBotGUI:
         self.ieee_key.set(str(saved.get("ieee_api_key", "") or ""))
 
         self.summary_base_url.set(str(saved.get("summary_base_url", "") or ""))
+        self.summary_provider.set(str(saved.get("summary_provider", "custom") or "custom"))
         self.summary_api_key.set(str(saved.get("summary_api_key", "") or ""))
 
         max_tokens = str(saved.get("summary_max_tokens", "") or "")
@@ -314,18 +337,28 @@ class PaperBotGUI:
 
         self.summary_base_url = tk.StringVar()
         self.summary_api_key = tk.StringVar()
+        self.summary_provider = tk.StringVar(value="custom")
         self.summary_max_tokens = tk.StringVar(value="900")
 
-        ttk.Label(cfg, text="源地址 (base_url)").grid(row=0, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(cfg, textvariable=self.summary_base_url, width=78).grid(row=0, column=1, sticky=tk.EW, padx=8, pady=5)
+        ttk.Label(cfg, text="API 提供商").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Combobox(
+            cfg,
+            textvariable=self.summary_provider,
+            values=list(SUMMARY_API_PROVIDERS.keys()),
+            state="readonly",
+            width=20,
+        ).grid(row=0, column=1, sticky=tk.W, padx=8, pady=5)
 
-        ttk.Label(cfg, text="API Key").grid(row=1, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(cfg, textvariable=self.summary_api_key, show="*", width=78).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=5)
+        ttk.Label(cfg, text="源地址 (base_url)").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(cfg, textvariable=self.summary_base_url, width=78).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=5)
 
-        ttk.Label(cfg, text="最大输出 token").grid(row=2, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(cfg, textvariable=self.summary_max_tokens, width=20).grid(row=2, column=1, sticky=tk.W, padx=8, pady=5)
+        ttk.Label(cfg, text="API Key").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(cfg, textvariable=self.summary_api_key, show="*", width=78).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=5)
 
-        ttk.Button(cfg, text="确定", style="Success.TButton", command=self.on_save_summary_config).grid(row=3, column=1, sticky=tk.E, pady=(8, 0))
+        ttk.Label(cfg, text="最大输出 token").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(cfg, textvariable=self.summary_max_tokens, width=20).grid(row=3, column=1, sticky=tk.W, padx=8, pady=5)
+
+        ttk.Button(cfg, text="确定", style="Success.TButton", command=self.on_save_summary_config).grid(row=4, column=1, sticky=tk.E, pady=(8, 0))
         cfg.columnconfigure(1, weight=1)
 
     def _build_journal_panel(self, parent: ttk.LabelFrame) -> None:
@@ -335,7 +368,8 @@ class PaperBotGUI:
         self.journal_name = tk.StringVar()
         self.journal_short = tk.StringVar()
         self.journal_publisher = tk.StringVar(value="elsevier")
-        self.journal_issn = tk.StringVar()
+        self.journal_issn_print = tk.StringVar()
+        self.journal_issn_online = tk.StringVar()
 
         ttk.Label(form, text="期刊名称").grid(row=0, column=0, sticky=tk.W, pady=6)
         ttk.Entry(form, textvariable=self.journal_name, width=42).grid(row=0, column=1, sticky=tk.EW, padx=8, pady=6)
@@ -343,8 +377,10 @@ class PaperBotGUI:
         ttk.Entry(form, textvariable=self.journal_short, width=42).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=6)
         ttk.Label(form, text="出版社").grid(row=2, column=0, sticky=tk.W, pady=6)
         ttk.Combobox(form, textvariable=self.journal_publisher, values=PUBLISHERS, state="readonly", width=39).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=6)
-        ttk.Label(form, text="ISSN (可选)").grid(row=3, column=0, sticky=tk.W, pady=6)
-        ttk.Entry(form, textvariable=self.journal_issn, width=42).grid(row=3, column=1, sticky=tk.EW, padx=8, pady=6)
+        ttk.Label(form, text="ISSN (print，可选)").grid(row=3, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(form, textvariable=self.journal_issn_print, width=42).grid(row=3, column=1, sticky=tk.EW, padx=8, pady=6)
+        ttk.Label(form, text="ISSN (online，可选)").grid(row=4, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(form, textvariable=self.journal_issn_online, width=42).grid(row=4, column=1, sticky=tk.EW, padx=8, pady=6)
         form.columnconfigure(1, weight=1)
 
         btn_row = ttk.Frame(parent)
@@ -450,7 +486,12 @@ class PaperBotGUI:
         for item in self.journal_tree.get_children():
             self.journal_tree.delete(item)
         for idx, j in enumerate(_get_journals()):
-            issn = j.get("crossref_issn") or j.get("issn_print") or j.get("issn_online") or ""
+            issn_print = (j.get("issn_print") or "").strip()
+            issn_online = (j.get("issn_online") or "").strip()
+            if issn_print and issn_online:
+                issn = f"P:{issn_print} / O:{issn_online}"
+            else:
+                issn = issn_print or issn_online or (j.get("crossref_issn") or "")
             self.journal_tree.insert("", tk.END, iid=str(idx), values=(j.get("name", ""), (j.get("publisher") or "").capitalize(), issn))
 
     def refresh_downloaded_articles_table(self) -> None:
@@ -469,7 +510,13 @@ class PaperBotGUI:
         if not name:
             messagebox.showerror("输入错误", "请填写期刊名称")
             return
-        _append_journal(name=name, short_name=self.journal_short.get(), publisher=self.journal_publisher.get(), issn=self.journal_issn.get())
+        _append_journal(
+            name=name,
+            short_name=self.journal_short.get(),
+            publisher=self.journal_publisher.get(),
+            issn_print=self.journal_issn_print.get(),
+            issn_online=self.journal_issn_online.get(),
+        )
         self.refresh_journal_table()
         self.log(f"• 已添加期刊：{name}")
 
@@ -567,6 +614,7 @@ class PaperBotGUI:
             messagebox.showerror("输入错误", "最大输出 token 必须是整数")
             return
         _save_summary_llm_config(
+            provider=self.summary_provider.get(),
             base_url=self.summary_base_url.get(),
             api_key=self.summary_api_key.get(),
             max_tokens=max_tokens,
