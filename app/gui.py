@@ -115,6 +115,8 @@ def _run_daily() -> subprocess.CompletedProcess[str]:
         [sys.executable, str(BASE_DIR / "app" / "run_daily.py")],
         cwd=BASE_DIR,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
     )
@@ -136,16 +138,29 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
 
     conn = sqlite3.connect(str(db_path))
     try:
-        rows = conn.execute(
-            """
-            SELECT a.published_date, a.title, a.journal, a.doi, COALESCE(f.status, '')
-            FROM articles a
-            LEFT JOIN fulltexts f ON f.doi = a.doi
-            ORDER BY a.published_date DESC, a.id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                """
+                SELECT a.published_date, a.title, a.journal, a.doi, COALESCE(f.status, '')
+                FROM articles a
+                LEFT JOIN fulltexts f ON f.doi = a.doi
+                ORDER BY a.published_date DESC, a.rowid DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # 兼容部分历史/非标准库结构，退化到不依赖 rowid/id 的排序
+            rows = conn.execute(
+                """
+                SELECT a.published_date, a.title, a.journal, a.doi, COALESCE(f.status, '')
+                FROM articles a
+                LEFT JOIN fulltexts f ON f.doi = a.doi
+                ORDER BY a.published_date DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
         return [(str(r[0] or ""), str(r[1] or ""), str(r[2] or ""), str(r[3] or ""), str(r[4] or "")) for r in rows]
     finally:
         conn.close()
@@ -430,7 +445,12 @@ class PaperBotGUI:
     def refresh_downloaded_articles_table(self) -> None:
         for item in self.downloaded_tree.get_children():
             self.downloaded_tree.delete(item)
-        for row in _load_downloaded_articles():
+        try:
+            rows = _load_downloaded_articles()
+        except Exception as e:
+            self.log(f"• 读取文献列表失败：{e}")
+            rows = []
+        for row in rows:
             self.downloaded_tree.insert("", tk.END, values=row)
 
     def on_add_journal(self) -> None:
