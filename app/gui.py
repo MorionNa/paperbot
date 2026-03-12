@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+from datetime import date, timedelta
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -13,6 +14,19 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BASE_DIR / "config" / "config.yml"
 SECRETS_PATH = BASE_DIR / "config" / "secrets.yml"
 PUBLISHERS = ["elsevier", "wiley", "springer", "ieee", "other"]
+
+
+def _date_options(days_back: int = 3650, days_forward: int = 365) -> list[str]:
+    today = date.today()
+    start = today - timedelta(days=days_back)
+    end = today + timedelta(days=days_forward)
+
+    values: list[str] = []
+    cur = start
+    while cur <= end:
+        values.append(cur.isoformat())
+        cur += timedelta(days=1)
+    return values
 
 
 def _load_yaml(path: Path) -> dict:
@@ -251,13 +265,27 @@ class PaperBotGUI:
         left = ttk.Frame(grid)
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 16))
 
+        date_values = _date_options()
+
         ttk.Label(left, text="开始时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
-        self.date_from = tk.StringVar(value="2023-01-01")
-        ttk.Entry(left, textvariable=self.date_from, width=22).pack(anchor=tk.W, pady=(6, 12))
+        self.date_from = tk.StringVar(value=(date.today() - timedelta(days=30)).isoformat())
+        self.date_from_box = ttk.Combobox(
+            left,
+            textvariable=self.date_from,
+            values=date_values,
+            width=22,
+        )
+        self.date_from_box.pack(anchor=tk.W, pady=(6, 12))
 
         ttk.Label(left, text="结束时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
-        self.date_until = tk.StringVar()
-        ttk.Entry(left, textvariable=self.date_until, width=22).pack(anchor=tk.W, pady=(6, 12))
+        self.date_until = tk.StringVar(value=date.today().isoformat())
+        self.date_until_box = ttk.Combobox(
+            left,
+            textvariable=self.date_until,
+            values=date_values,
+            width=22,
+        )
+        self.date_until_box.pack(anchor=tk.W, pady=(6, 12))
 
         btns = ttk.Frame(left)
         btns.pack(anchor=tk.W, pady=(6, 4))
