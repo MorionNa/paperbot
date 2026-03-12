@@ -21,9 +21,9 @@ dashscope_api_key: "<your-dashscope-key>"
 elsevier_api_key: "<your-elsevier-key>"
 elsevier_insttoken: "<optional-insttoken>"
 wiley_tdm_client_token: "<your-wiley-tdm-token>"
+springer_api_key: "<your-springer-key>"
+ieee_api_key: "<your-ieee-key>"
 ```
-
-4. 如需 IEEE 下载，请额外在环境变量中设置 `IEEE_API_KEY`（`secrets.yml` 当前未映射该字段）。
 
 ---
 
@@ -134,3 +134,18 @@ pipeline:
 说明：
 - 当 `date_from/date_until` 同时存在时，会覆盖 `lookback_days`。
 - 两者必须同时配置，且 `date_from <= date_until`。
+
+### 4) 图形界面（GUI）配置与一键运行
+
+在仓库根目录执行：
+
+```bash
+python app/gui.py
+```
+
+GUI 提供三块功能：
+
+- 添加期刊：填写期刊名称、publisher、ISSN 信息后点击“添加期刊”，会追加到 `config/config.yml` 的 `journals` 列表。
+- 设置 API Key：支持 Elsevier / Wiley / Springer / IEEE，点击“确认保存 Key”后写入 `config/secrets.yml`。
+- 指定时间运行：输入开始与结束时间（`YYYY-MM-DD`），点击“下载并运行”，会写入 `pipeline.date_from/date_until` 并自动执行 `app/run_daily.py`。
+

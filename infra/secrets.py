@@ -27,6 +27,8 @@ def load_secrets_into_env(base_dir: Path, rel_path: str = "config/secrets.yml") 
         "elsevier_api_key": "ELSEVIER_API_KEY",
         "elsevier_insttoken": "ELSEVIER_INSTTOKEN",
         "wiley_tdm_client_token": "WILEY_TDM_CLIENT_TOKEN",
+        "springer_api_key": "SPRINGER_API_KEY",
+        "ieee_api_key": "IEEE_API_KEY",
     }
 
     for k, env_name in mapping.items():
