@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import webbrowser
+import calendar
 from datetime import date, timedelta
 from pathlib import Path
 import tkinter as tk
@@ -251,15 +252,18 @@ class PaperBotGUI:
         for i, (title, var, url) in enumerate(rows):
             row = ttk.Frame(parent)
             row.pack(fill=tk.X, pady=8)
-            ttk.Label(row, text=f"{title}", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+            title_row = ttk.Frame(row)
+            title_row.pack(fill=tk.X)
+            ttk.Label(title_row, text=f"{title}", font=("Microsoft YaHei", 12, "bold")).pack(side=tk.LEFT)
             link = tk.Label(
-                row,
+                title_row,
                 text=f"点我获取{title}",
                 fg="#2563eb",
                 cursor="hand2",
                 font=("Microsoft YaHei", 10, "underline"),
+                bg="#ffffff",
             )
-            link.pack(anchor=tk.W, pady=(2, 4))
+            link.pack(side=tk.LEFT, padx=(10, 0))
             link.bind("<Button-1>", lambda _e, u=url: self.open_api_link(u))
             entry_row = ttk.Frame(row)
             entry_row.pack(fill=tk.X, pady=(2, 0))
@@ -275,27 +279,19 @@ class PaperBotGUI:
         left = ttk.Frame(grid)
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 16))
 
-        date_values = _date_options()
-
         ttk.Label(left, text="开始时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
         self.date_from = tk.StringVar(value=(date.today() - timedelta(days=30)).isoformat())
-        self.date_from_box = ttk.Combobox(
-            left,
-            textvariable=self.date_from,
-            values=date_values,
-            width=22,
-        )
-        self.date_from_box.pack(anchor=tk.W, pady=(6, 12))
+        from_row = ttk.Frame(left)
+        from_row.pack(anchor=tk.W, pady=(6, 12))
+        ttk.Entry(from_row, textvariable=self.date_from, width=22, state="readonly").pack(side=tk.LEFT)
+        ttk.Button(from_row, text="📅", width=3, command=lambda: self.open_calendar(self.date_from)).pack(side=tk.LEFT, padx=(6, 0))
 
         ttk.Label(left, text="结束时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
         self.date_until = tk.StringVar(value=date.today().isoformat())
-        self.date_until_box = ttk.Combobox(
-            left,
-            textvariable=self.date_until,
-            values=date_values,
-            width=22,
-        )
-        self.date_until_box.pack(anchor=tk.W, pady=(6, 12))
+        until_row = ttk.Frame(left)
+        until_row.pack(anchor=tk.W, pady=(6, 12))
+        ttk.Entry(until_row, textvariable=self.date_until, width=22, state="readonly").pack(side=tk.LEFT)
+        ttk.Button(until_row, text="📅", width=3, command=lambda: self.open_calendar(self.date_until)).pack(side=tk.LEFT, padx=(6, 0))
 
         btns = ttk.Frame(left)
         btns.pack(anchor=tk.W, pady=(6, 4))
@@ -369,6 +365,79 @@ class PaperBotGUI:
             self.log(f"• 已打开链接：{url}")
         except Exception as e:
             messagebox.showerror("打开失败", f"无法打开链接：{e}")
+
+    def open_calendar(self, target_var: tk.StringVar) -> None:
+        popup = tk.Toplevel(self.root)
+        popup.title("选择日期")
+        popup.resizable(False, False)
+        popup.transient(self.root)
+        popup.grab_set()
+
+        try:
+            cur = date.fromisoformat(target_var.get().strip())
+        except Exception:
+            cur = date.today()
+
+        self._calendar_state = {
+            "popup": popup,
+            "target": target_var,
+            "year": cur.year,
+            "month": cur.month,
+        }
+        self._render_calendar()
+
+    def _render_calendar(self) -> None:
+        popup = self._calendar_state["popup"]
+        for w in popup.winfo_children():
+            w.destroy()
+
+        year = self._calendar_state["year"]
+        month = self._calendar_state["month"]
+
+        header = ttk.Frame(popup, padding=8)
+        header.pack(fill=tk.X)
+        ttk.Button(header, text="<", width=3, command=lambda: self._move_month(-1)).pack(side=tk.LEFT)
+        ttk.Label(header, text=f"{year}-{month:02d}", font=("Microsoft YaHei", 12, "bold")).pack(side=tk.LEFT, padx=10)
+        ttk.Button(header, text=">", width=3, command=lambda: self._move_month(1)).pack(side=tk.LEFT)
+
+        grid = ttk.Frame(popup, padding=(8, 0, 8, 8))
+        grid.pack()
+
+        week_names = ["一", "二", "三", "四", "五", "六", "日"]
+        for i, n in enumerate(week_names):
+            ttk.Label(grid, text=n, width=4, anchor=tk.CENTER).grid(row=0, column=i, padx=1, pady=1)
+
+        month_data = calendar.monthcalendar(year, month)
+        for r, week in enumerate(month_data, start=1):
+            for c, d in enumerate(week):
+                if d == 0:
+                    ttk.Label(grid, text="", width=4).grid(row=r, column=c, padx=1, pady=1)
+                else:
+                    ttk.Button(
+                        grid,
+                        text=str(d),
+                        width=4,
+                        command=lambda day=d: self._select_date(day),
+                    ).grid(row=r, column=c, padx=1, pady=1)
+
+    def _move_month(self, delta: int) -> None:
+        y = self._calendar_state["year"]
+        m = self._calendar_state["month"] + delta
+        if m == 0:
+            y -= 1
+            m = 12
+        elif m == 13:
+            y += 1
+            m = 1
+        self._calendar_state["year"] = y
+        self._calendar_state["month"] = m
+        self._render_calendar()
+
+    def _select_date(self, day: int) -> None:
+        y = self._calendar_state["year"]
+        m = self._calendar_state["month"]
+        self._calendar_state["target"].set(date(y, m, day).isoformat())
+        self._calendar_state["popup"].destroy()
 
     def on_save_keys(self) -> None:
         _save_api_keys(
