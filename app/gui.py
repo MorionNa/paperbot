@@ -86,6 +86,22 @@ def _save_summary_llm_config(base_url: str, api_key: str, max_tokens: str) -> No
     _save_yaml(SECRETS_PATH, secrets)
 
 
+
+
+def _load_saved_gui_settings() -> dict:
+    cfg = _load_yaml(CONFIG_PATH)
+    sec = _load_yaml(SECRETS_PATH)
+    llm = cfg.get("llm") or {}
+    return {
+        "elsevier_api_key": sec.get("elsevier_api_key", ""),
+        "wiley_tdm_client_token": sec.get("wiley_tdm_client_token", ""),
+        "springer_api_key": sec.get("springer_api_key", ""),
+        "ieee_api_key": sec.get("ieee_api_key", ""),
+        "summary_base_url": llm.get("base_url", ""),
+        "summary_max_tokens": str(llm.get("max_output_tokens", "") or ""),
+        "summary_api_key": sec.get("custom_llm_api_key", ""),
+    }
+
 def _set_date_range(date_from: str, date_until: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     pipeline = cfg.setdefault("pipeline", {})
@@ -146,6 +162,7 @@ class PaperBotGUI:
         self.active_page = "download"
         self._build_styles()
         self._build_layout()
+        self._load_saved_values_into_form()
         self.show_page("download")
 
     def _build_styles(self) -> None:
@@ -194,6 +211,22 @@ class PaperBotGUI:
 
         self._build_download_page(self.download_page)
         self._build_summary_page(self.summary_page)
+
+
+    def _load_saved_values_into_form(self) -> None:
+        saved = _load_saved_gui_settings()
+
+        self.elsevier_key.set(str(saved.get("elsevier_api_key", "") or ""))
+        self.wiley_key.set(str(saved.get("wiley_tdm_client_token", "") or ""))
+        self.springer_key.set(str(saved.get("springer_api_key", "") or ""))
+        self.ieee_key.set(str(saved.get("ieee_api_key", "") or ""))
+
+        self.summary_base_url.set(str(saved.get("summary_base_url", "") or ""))
+        self.summary_api_key.set(str(saved.get("summary_api_key", "") or ""))
+
+        max_tokens = str(saved.get("summary_max_tokens", "") or "")
+        if max_tokens:
+            self.summary_max_tokens.set(max_tokens)
 
     def show_page(self, page: str) -> None:
         self.active_page = page
