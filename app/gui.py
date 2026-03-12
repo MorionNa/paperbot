@@ -252,16 +252,16 @@ class PaperBotGUI:
         for i, (title, var, url) in enumerate(rows):
             row = ttk.Frame(parent)
             row.pack(fill=tk.X, pady=8)
-            title_row = ttk.Frame(row)
+            title_row = tk.Frame(row, bg="#f2f3f5")
             title_row.pack(fill=tk.X)
-            ttk.Label(title_row, text=f"{title}", font=("Microsoft YaHei", 12, "bold")).pack(side=tk.LEFT)
+            tk.Label(title_row, text=f"{title}", font=("Microsoft YaHei", 12, "bold"), bg="#f2f3f5").pack(side=tk.LEFT)
             link = tk.Label(
                 title_row,
                 text=f"点我获取{title}",
                 fg="#2563eb",
                 cursor="hand2",
                 font=("Microsoft YaHei", 10, "underline"),
-                bg="#ffffff",
+                bg="#f2f3f5",
             )
             link.pack(side=tk.LEFT, padx=(10, 0))
             link.bind("<Button-1>", lambda _e, u=url: self.open_api_link(u))
