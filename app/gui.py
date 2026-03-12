@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -11,6 +12,7 @@ import yaml
 BASE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BASE_DIR / "config" / "config.yml"
 SECRETS_PATH = BASE_DIR / "config" / "secrets.yml"
+PUBLISHERS = ["elsevier", "wiley", "springer", "ieee", "other"]
 
 
 def _load_yaml(path: Path) -> dict:
@@ -28,22 +30,35 @@ def _save_yaml(path: Path, data: dict) -> None:
     )
 
 
-def _append_journal(name: str, publisher: str, crossref_issn: str, issn_print: str, issn_online: str) -> None:
+def _append_journal(name: str, short_name: str, publisher: str, issn: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     journals = cfg.setdefault("journals", [])
 
     journal = {
         "name": name.strip(),
         "publisher": publisher.strip().lower(),
-        "crossref_issn": crossref_issn.strip(),
     }
-    if issn_print.strip():
-        journal["issn_print"] = issn_print.strip()
-    if issn_online.strip():
-        journal["issn_online"] = issn_online.strip()
+    if short_name.strip():
+        journal["short_name"] = short_name.strip()
+    if issn.strip():
+        journal["crossref_issn"] = issn.strip()
 
     journals.append(journal)
     _save_yaml(CONFIG_PATH, cfg)
+
+
+def _delete_journal(index: int) -> None:
+    cfg = _load_yaml(CONFIG_PATH)
+    journals = cfg.get("journals") or []
+    if 0 <= index < len(journals):
+        journals.pop(index)
+    cfg["journals"] = journals
+    _save_yaml(CONFIG_PATH, cfg)
+
+
+def _get_journals() -> list[dict]:
+    cfg = _load_yaml(CONFIG_PATH)
+    return list(cfg.get("journals") or [])
 
 
 def _save_api_keys(elsevier_key: str, wiley_key: str, springer_key: str, ieee_key: str) -> None:
@@ -59,13 +74,15 @@ def _save_api_keys(elsevier_key: str, wiley_key: str, springer_key: str, ieee_ke
     _save_yaml(SECRETS_PATH, secrets)
 
 
-def _set_date_range_and_run(date_from: str, date_until: str) -> subprocess.CompletedProcess[str]:
+def _set_date_range(date_from: str, date_until: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     pipeline = cfg.setdefault("pipeline", {})
     pipeline["date_from"] = date_from.strip()
     pipeline["date_until"] = date_until.strip()
     _save_yaml(CONFIG_PATH, cfg)
 
+
+def _run_daily() -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(BASE_DIR / "app" / "run_daily.py")],
         cwd=BASE_DIR,
@@ -78,101 +95,221 @@ def _set_date_range_and_run(date_from: str, date_until: str) -> subprocess.Compl
 class PaperBotGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("PaperBot 配置与下载")
-        self.root.geometry("860x620")
+        self.root.title("论文库下载工具")
+        self.root.geometry("1280x820")
+        self.root.minsize(1100, 700)
 
-        wrapper = ttk.Frame(root, padding=16)
-        wrapper.pack(fill=tk.BOTH, expand=True)
+        self.running = False
+        self._build_styles()
+        self._build_layout()
+        self.refresh_journal_table()
 
-        self._build_journal_section(wrapper)
-        self._build_api_section(wrapper)
-        self._build_run_section(wrapper)
+    def _build_styles(self) -> None:
+        style = ttk.Style(self.root)
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
 
-    def _build_journal_section(self, parent: ttk.Frame) -> None:
-        frame = ttk.LabelFrame(parent, text="1) 添加期刊到 config.yml", padding=12)
-        frame.pack(fill=tk.X, pady=(0, 12))
+        style.configure("Sidebar.TFrame", background="#eff2f6")
+        style.configure("Main.TFrame", background="#f5f7fb")
+        style.configure("Card.TLabelframe", background="#ffffff")
+        style.configure("Card.TLabelframe.Label", background="#ffffff", font=("Microsoft YaHei", 12, "bold"))
+        style.configure("Header.TLabel", background="#f5f7fb", font=("Microsoft YaHei", 19, "bold"), foreground="#0f172a")
+        style.configure("SubHeader.TLabel", background="#f5f7fb", font=("Microsoft YaHei", 18, "bold"), foreground="#111827")
+        style.configure("Menu.TButton", font=("Microsoft YaHei", 13), padding=(12, 8))
+
+    def _build_layout(self) -> None:
+        shell = ttk.Frame(self.root)
+        shell.pack(fill=tk.BOTH, expand=True)
+
+        self.sidebar = ttk.Frame(shell, width=250, style="Sidebar.TFrame")
+        self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        self.sidebar.pack_propagate(False)
+
+        self.main = ttk.Frame(shell, style="Main.TFrame")
+        self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._build_sidebar()
+        self._build_main()
+
+    def _build_sidebar(self) -> None:
+        ttk.Label(self.sidebar, text="论文库下载工具", background="#eff2f6", font=("Microsoft YaHei", 22, "bold")).pack(anchor=tk.W, padx=26, pady=(28, 2))
+        ttk.Label(self.sidebar, text="Paper Downloader", background="#eff2f6", foreground="#64748b", font=("Microsoft YaHei", 13)).pack(anchor=tk.W, padx=26, pady=(0, 24))
+
+        ttk.Button(self.sidebar, text="📘  期刊配置", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
+        ttk.Button(self.sidebar, text="🔑  API Key", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
+        ttk.Button(self.sidebar, text="⬇️  下载任务", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
+        ttk.Button(self.sidebar, text="⚙️  系统设置", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
+
+        ttk.Label(self.sidebar, text="Version 1.1.0", background="#eff2f6", foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
+
+    def _build_main(self) -> None:
+        top_wrap = ttk.Frame(self.main, style="Main.TFrame")
+        top_wrap.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+
+        upper = ttk.Frame(top_wrap, style="Main.TFrame")
+        upper.pack(fill=tk.BOTH, expand=True)
+
+        left = ttk.LabelFrame(upper, text="期刊信息", padding=14, style="Card.TLabelframe")
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+
+        right = ttk.LabelFrame(upper, text="API Key 管理", padding=14, style="Card.TLabelframe")
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
+
+        self._build_journal_panel(left)
+        self._build_api_panel(right)
+
+        bottom = ttk.LabelFrame(top_wrap, text="下载任务", padding=14, style="Card.TLabelframe")
+        bottom.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
+        self._build_download_panel(bottom)
+
+    def _build_journal_panel(self, parent: ttk.LabelFrame) -> None:
+        form = ttk.Frame(parent)
+        form.pack(fill=tk.X)
 
         self.journal_name = tk.StringVar()
-        self.journal_publisher = tk.StringVar()
-        self.journal_crossref_issn = tk.StringVar()
-        self.journal_issn_print = tk.StringVar()
-        self.journal_issn_online = tk.StringVar()
+        self.journal_short = tk.StringVar()
+        self.journal_publisher = tk.StringVar(value="elsevier")
+        self.journal_issn = tk.StringVar()
 
-        fields = [
-            ("期刊名称", self.journal_name),
-            ("出版社（elsevier/wiley/springer/ieee 等）", self.journal_publisher),
-            ("Crossref ISSN", self.journal_crossref_issn),
-            ("ISSN (print，可选)", self.journal_issn_print),
-            ("ISSN (online，可选)", self.journal_issn_online),
-        ]
+        ttk.Label(form, text="期刊名称").grid(row=0, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(form, textvariable=self.journal_name, width=42).grid(row=0, column=1, sticky=tk.EW, padx=8, pady=6)
 
-        for i, (label, var) in enumerate(fields):
-            ttk.Label(frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=4)
-            ttk.Entry(frame, textvariable=var, width=56).grid(row=i, column=1, sticky=tk.W, padx=8, pady=4)
+        ttk.Label(form, text="期刊缩写").grid(row=1, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(form, textvariable=self.journal_short, width=42).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=6)
 
-        ttk.Button(frame, text="添加期刊", command=self.on_add_journal).grid(
-            row=len(fields), column=1, sticky=tk.E, pady=(8, 0)
-        )
+        ttk.Label(form, text="出版社").grid(row=2, column=0, sticky=tk.W, pady=6)
+        ttk.Combobox(form, textvariable=self.journal_publisher, values=PUBLISHERS, state="readonly", width=39).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=6)
 
-    def _build_api_section(self, parent: ttk.Frame) -> None:
-        frame = ttk.LabelFrame(parent, text="2) 设置 API Key 到 secret.yml", padding=12)
-        frame.pack(fill=tk.X, pady=(0, 12))
+        ttk.Label(form, text="ISSN (可选)").grid(row=3, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(form, textvariable=self.journal_issn, width=42).grid(row=3, column=1, sticky=tk.EW, padx=8, pady=6)
 
+        form.columnconfigure(1, weight=1)
+
+        btn_row = ttk.Frame(parent)
+        btn_row.pack(fill=tk.X, pady=(8, 10))
+        ttk.Button(btn_row, text="＋ 添加到 config.yml", command=self.on_add_journal).pack(side=tk.LEFT)
+        ttk.Button(btn_row, text="删除选中", command=self.on_delete_journal).pack(side=tk.LEFT, padx=8)
+
+        ttk.Label(parent, text="已添加期刊", font=("Microsoft YaHei", 13, "bold")).pack(anchor=tk.W, pady=(4, 6))
+
+        cols = ("name", "publisher", "issn")
+        self.journal_tree = ttk.Treeview(parent, columns=cols, show="headings", height=9)
+        self.journal_tree.heading("name", text="期刊名称")
+        self.journal_tree.heading("publisher", text="出版社")
+        self.journal_tree.heading("issn", text="ISSN")
+        self.journal_tree.column("name", width=280)
+        self.journal_tree.column("publisher", width=100, anchor=tk.CENTER)
+        self.journal_tree.column("issn", width=110, anchor=tk.CENTER)
+
+        ybar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=self.journal_tree.yview)
+        self.journal_tree.configure(yscrollcommand=ybar.set)
+        self.journal_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ybar.pack(side=tk.LEFT, fill=tk.Y)
+
+    def _build_api_panel(self, parent: ttk.LabelFrame) -> None:
         self.elsevier_key = tk.StringVar()
         self.wiley_key = tk.StringVar()
         self.springer_key = tk.StringVar()
         self.ieee_key = tk.StringVar()
 
-        fields = [
-            ("Elsevier API Key", self.elsevier_key),
-            ("Wiley TDM Token", self.wiley_key),
-            ("Springer API Key", self.springer_key),
-            ("IEEE API Key", self.ieee_key),
+        rows = [
+            ("Elsevier API", self.elsevier_key),
+            ("Wiley API", self.wiley_key),
+            ("Springer API", self.springer_key),
+            ("IEEE API", self.ieee_key),
         ]
 
-        for i, (label, var) in enumerate(fields):
-            ttk.Label(frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=4)
-            ttk.Entry(frame, textvariable=var, width=56, show="*").grid(
-                row=i, column=1, sticky=tk.W, padx=8, pady=4
-            )
+        for i, (title, var) in enumerate(rows):
+            row = ttk.Frame(parent)
+            row.pack(fill=tk.X, pady=8)
+            ttk.Label(row, text=f"{title}", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+            entry_row = ttk.Frame(row)
+            entry_row.pack(fill=tk.X, pady=(4, 0))
+            ttk.Entry(entry_row, textvariable=var, show="*", width=42).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ttk.Label(entry_row, text="✅", foreground="#10b981", font=("Microsoft YaHei", 14)).pack(side=tk.LEFT, padx=8)
 
-        ttk.Button(frame, text="确认保存 Key", command=self.on_save_keys).grid(
-            row=len(fields), column=1, sticky=tk.E, pady=(8, 0)
-        )
+        ttk.Button(parent, text="✔ 保存到 secret.yml", command=self.on_save_keys).pack(anchor=tk.E, pady=(18, 0))
 
-    def _build_run_section(self, parent: ttk.Frame) -> None:
-        frame = ttk.LabelFrame(parent, text="3) 按时间范围下载并运行 run_daily.py", padding=12)
-        frame.pack(fill=tk.BOTH, expand=True)
+    def _build_download_panel(self, parent: ttk.LabelFrame) -> None:
+        grid = ttk.Frame(parent)
+        grid.pack(fill=tk.BOTH, expand=True)
 
-        self.date_from = tk.StringVar()
+        left = ttk.Frame(grid)
+        left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 16))
+
+        ttk.Label(left, text="开始时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+        self.date_from = tk.StringVar(value="2023-01-01")
+        ttk.Entry(left, textvariable=self.date_from, width=22).pack(anchor=tk.W, pady=(6, 12))
+
+        ttk.Label(left, text="结束时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
         self.date_until = tk.StringVar()
+        ttk.Entry(left, textvariable=self.date_until, width=22).pack(anchor=tk.W, pady=(6, 12))
 
-        ttk.Label(frame, text="开始时间 (YYYY-MM-DD)").grid(row=0, column=0, sticky=tk.W, pady=4)
-        ttk.Entry(frame, textvariable=self.date_from, width=28).grid(row=0, column=1, sticky=tk.W, padx=8, pady=4)
+        btns = ttk.Frame(left)
+        btns.pack(anchor=tk.W, pady=(6, 4))
+        self.start_btn = ttk.Button(btns, text="⬇ 开始下载", command=self.on_run)
+        self.start_btn.pack(side=tk.LEFT)
+        ttk.Button(btns, text="■ 清空日志", command=self.clear_logs).pack(side=tk.LEFT, padx=8)
 
-        ttk.Label(frame, text="结束时间 (YYYY-MM-DD)").grid(row=1, column=0, sticky=tk.W, pady=4)
-        ttk.Entry(frame, textvariable=self.date_until, width=28).grid(row=1, column=1, sticky=tk.W, padx=8, pady=4)
+        right = ttk.Frame(grid)
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        ttk.Button(frame, text="下载并运行", command=self.on_run).grid(row=2, column=1, sticky=tk.E, pady=(8, 8))
+        ttk.Label(right, text="任务日志", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+        self.output_box = tk.Text(right, height=11, wrap="word", font=("Consolas", 11))
+        self.output_box.pack(fill=tk.BOTH, expand=True, pady=(6, 8))
 
-        self.output_box = tk.Text(frame, height=12, wrap="word")
-        self.output_box.grid(row=3, column=0, columnspan=2, sticky="nsew")
-        frame.rowconfigure(3, weight=1)
-        frame.columnconfigure(1, weight=1)
+        self.progress_var = tk.IntVar(value=0)
+        self.progress = ttk.Progressbar(right, orient=tk.HORIZONTAL, maximum=100, variable=self.progress_var)
+        self.progress.pack(fill=tk.X)
+        self.progress_label = ttk.Label(right, text="总进度 0%")
+        self.progress_label.pack(anchor=tk.E, pady=(4, 0))
+
+    def log(self, text: str) -> None:
+        self.output_box.insert(tk.END, text + "\n")
+        self.output_box.see(tk.END)
+
+    def clear_logs(self) -> None:
+        self.output_box.delete("1.0", tk.END)
+        self.progress_var.set(0)
+        self.progress_label.config(text="总进度 0%")
+
+    def refresh_journal_table(self) -> None:
+        for item in self.journal_tree.get_children():
+            self.journal_tree.delete(item)
+
+        journals = _get_journals()
+        for idx, j in enumerate(journals):
+            name = j.get("name", "")
+            pub = (j.get("publisher") or "").capitalize()
+            issn = j.get("crossref_issn") or j.get("issn_print") or j.get("issn_online") or ""
+            self.journal_tree.insert("", tk.END, iid=str(idx), values=(name, pub, issn))
 
     def on_add_journal(self) -> None:
-        if not self.journal_name.get().strip() or not self.journal_crossref_issn.get().strip():
-            messagebox.showerror("输入错误", "请至少填写期刊名称和 Crossref ISSN")
+        name = self.journal_name.get().strip()
+        if not name:
+            messagebox.showerror("输入错误", "请填写期刊名称")
             return
 
         _append_journal(
-            name=self.journal_name.get(),
+            name=name,
+            short_name=self.journal_short.get(),
             publisher=self.journal_publisher.get(),
-            crossref_issn=self.journal_crossref_issn.get(),
-            issn_print=self.journal_issn_print.get(),
-            issn_online=self.journal_issn_online.get(),
+            issn=self.journal_issn.get(),
         )
-        messagebox.showinfo("成功", f"已添加期刊：{self.journal_name.get().strip()}")
+        self.refresh_journal_table()
+        self.log(f"• 已添加期刊：{name}")
+
+    def on_delete_journal(self) -> None:
+        selected = self.journal_tree.selection()
+        if not selected:
+            messagebox.showwarning("提示", "请先在表格里选中一行")
+            return
+
+        idx = int(selected[0])
+        values = self.journal_tree.item(selected[0], "values")
+        _delete_journal(idx)
+        self.refresh_journal_table()
+        self.log(f"• 已删除期刊：{values[0] if values else idx}")
 
     def on_save_keys(self) -> None:
         _save_api_keys(
@@ -181,27 +318,52 @@ class PaperBotGUI:
             springer_key=self.springer_key.get(),
             ieee_key=self.ieee_key.get(),
         )
-        messagebox.showinfo("成功", f"API Keys 已保存到 {SECRETS_PATH}")
+        self.log(f"• API Key 已保存到 {SECRETS_PATH}")
+        messagebox.showinfo("成功", "已保存到 secret.yml")
+
+    def _finish_run(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.running = False
+        self.start_btn.config(state=tk.NORMAL)
+        self.progress_var.set(100 if result.returncode == 0 else 0)
+        self.progress_label.config(text=f"总进度 {self.progress_var.get()}%")
+
+        self.log("\n[STDOUT]")
+        self.log(result.stdout or "(empty)")
+        self.log("\n[STDERR]")
+        self.log(result.stderr or "(empty)")
+
+        if result.returncode == 0:
+            messagebox.showinfo("完成", "run_daily.py 执行成功")
+        else:
+            messagebox.showerror("失败", f"run_daily.py 失败，返回码={result.returncode}")
+
+    def _run_task_thread(self, date_from: str, date_until: str) -> None:
+        try:
+            _set_date_range(date_from=date_from, date_until=date_until)
+            result = _run_daily()
+        except Exception as e:
+            result = subprocess.CompletedProcess(args=["run_daily.py"], returncode=1, stdout="", stderr=str(e))
+        self.root.after(0, lambda: self._finish_run(result))
 
     def on_run(self) -> None:
+        if self.running:
+            return
+
         date_from = self.date_from.get().strip()
         date_until = self.date_until.get().strip()
         if not date_from or not date_until:
-            messagebox.showerror("输入错误", "请填写开始时间和结束时间")
+            messagebox.showerror("输入错误", "请填写开始和结束时间（YYYY-MM-DD）")
             return
 
-        self.output_box.delete("1.0", tk.END)
-        self.output_box.insert(tk.END, "正在运行 run_daily.py，请稍候...\n")
-        self.root.update_idletasks()
+        self.running = True
+        self.start_btn.config(state=tk.DISABLED)
+        self.clear_logs()
+        self.log(f"• 任务启动：{date_from} ~ {date_until}")
+        self.progress_var.set(35)
+        self.progress_label.config(text="总进度 35%")
 
-        result = _set_date_range_and_run(date_from=date_from, date_until=date_until)
-        self.output_box.insert(tk.END, "\n[STDOUT]\n" + (result.stdout or ""))
-        self.output_box.insert(tk.END, "\n[STDERR]\n" + (result.stderr or ""))
-
-        if result.returncode == 0:
-            messagebox.showinfo("完成", "run_daily.py 已执行完成")
-        else:
-            messagebox.showerror("执行失败", f"run_daily.py 返回码：{result.returncode}")
+        thread = threading.Thread(target=self._run_task_thread, args=(date_from, date_until), daemon=True)
+        thread.start()
 
 
 def main() -> None:
