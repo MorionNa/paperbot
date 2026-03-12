@@ -109,19 +109,22 @@ class PaperBotGUI:
         if "clam" in style.theme_names():
             style.theme_use("clam")
 
-        style.configure("Sidebar.TFrame", background="#eff2f6")
-        style.configure("Main.TFrame", background="#f5f7fb")
+        style.configure("Sidebar.TFrame", background="#eef2f7")
+        style.configure("Main.TFrame", background="#f3f5f9")
         style.configure("Card.TLabelframe", background="#ffffff")
         style.configure("Card.TLabelframe.Label", background="#ffffff", font=("Microsoft YaHei", 12, "bold"))
         style.configure("Header.TLabel", background="#f5f7fb", font=("Microsoft YaHei", 19, "bold"), foreground="#0f172a")
         style.configure("SubHeader.TLabel", background="#f5f7fb", font=("Microsoft YaHei", 18, "bold"), foreground="#111827")
         style.configure("Menu.TButton", font=("Microsoft YaHei", 13), padding=(12, 8))
+        style.configure("MenuActive.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(12, 8), foreground="#1d4ed8")
+        style.configure("Primary.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(16, 10))
+        style.configure("Success.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(14, 8))
 
     def _build_layout(self) -> None:
         shell = ttk.Frame(self.root)
         shell.pack(fill=tk.BOTH, expand=True)
 
-        self.sidebar = ttk.Frame(shell, width=250, style="Sidebar.TFrame")
+        self.sidebar = ttk.Frame(shell, width=290, style="Sidebar.TFrame")
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
         self.sidebar.pack_propagate(False)
 
@@ -132,15 +135,26 @@ class PaperBotGUI:
         self._build_main()
 
     def _build_sidebar(self) -> None:
-        ttk.Label(self.sidebar, text="论文库下载工具", background="#eff2f6", font=("Microsoft YaHei", 22, "bold")).pack(anchor=tk.W, padx=26, pady=(28, 2))
-        ttk.Label(self.sidebar, text="Paper Downloader", background="#eff2f6", foreground="#64748b", font=("Microsoft YaHei", 13)).pack(anchor=tk.W, padx=26, pady=(0, 24))
+        ttk.Label(
+            self.sidebar,
+            text="论文库下载工具",
+            background="#eef2f7",
+            font=("Microsoft YaHei", 20, "bold"),
+        ).pack(anchor=tk.W, padx=26, pady=(28, 2))
+        ttk.Label(
+            self.sidebar,
+            text="Paper Downloader",
+            background="#eef2f7",
+            foreground="#64748b",
+            font=("Microsoft YaHei", 13),
+        ).pack(anchor=tk.W, padx=26, pady=(0, 24))
 
-        ttk.Button(self.sidebar, text="📘  期刊配置", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
+        ttk.Button(self.sidebar, text="📘  期刊配置", style="MenuActive.TButton").pack(fill=tk.X, padx=18, pady=6)
         ttk.Button(self.sidebar, text="🔑  API Key", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
         ttk.Button(self.sidebar, text="⬇️  下载任务", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
         ttk.Button(self.sidebar, text="⚙️  系统设置", style="Menu.TButton").pack(fill=tk.X, padx=18, pady=6)
 
-        ttk.Label(self.sidebar, text="Version 1.1.0", background="#eff2f6", foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
+        ttk.Label(self.sidebar, text="Version 1.0", background="#eef2f7", foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
 
     def _build_main(self) -> None:
         top_wrap = ttk.Frame(self.main, style="Main.TFrame")
@@ -187,7 +201,7 @@ class PaperBotGUI:
 
         btn_row = ttk.Frame(parent)
         btn_row.pack(fill=tk.X, pady=(8, 10))
-        ttk.Button(btn_row, text="＋ 添加到 config.yml", command=self.on_add_journal).pack(side=tk.LEFT)
+        ttk.Button(btn_row, text="＋ 添加到 config.yml", command=self.on_add_journal, style="Primary.TButton").pack(side=tk.LEFT)
         ttk.Button(btn_row, text="删除选中", command=self.on_delete_journal).pack(side=tk.LEFT, padx=8)
 
         ttk.Label(parent, text="已添加期刊", font=("Microsoft YaHei", 13, "bold")).pack(anchor=tk.W, pady=(4, 6))
@@ -228,7 +242,7 @@ class PaperBotGUI:
             ttk.Entry(entry_row, textvariable=var, show="*", width=42).pack(side=tk.LEFT, fill=tk.X, expand=True)
             ttk.Label(entry_row, text="✅", foreground="#10b981", font=("Microsoft YaHei", 14)).pack(side=tk.LEFT, padx=8)
 
-        ttk.Button(parent, text="✔ 保存到 secret.yml", command=self.on_save_keys).pack(anchor=tk.E, pady=(18, 0))
+        ttk.Button(parent, text="✔ 保存", command=self.on_save_keys, style="Success.TButton").pack(anchor=tk.E, pady=(18, 0))
 
     def _build_download_panel(self, parent: ttk.LabelFrame) -> None:
         grid = ttk.Frame(parent)
@@ -247,7 +261,7 @@ class PaperBotGUI:
 
         btns = ttk.Frame(left)
         btns.pack(anchor=tk.W, pady=(6, 4))
-        self.start_btn = ttk.Button(btns, text="⬇ 开始下载", command=self.on_run)
+        self.start_btn = ttk.Button(btns, text="⬇ 开始下载", command=self.on_run, style="Primary.TButton")
         self.start_btn.pack(side=tk.LEFT)
         ttk.Button(btns, text="■ 清空日志", command=self.clear_logs).pack(side=tk.LEFT, padx=8)
 
