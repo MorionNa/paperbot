@@ -635,6 +635,20 @@ class PaperBotGUI:
         self._calendar_state = {"popup": popup, "target": target_var, "year": cur.year, "month": cur.month}
         self._render_calendar()
 
+        # 让日历弹窗出现在鼠标附近，而不是默认左上角
+        popup.update_idletasks()
+        width = popup.winfo_reqwidth()
+        height = popup.winfo_reqheight()
+
+        x = self.root.winfo_pointerx() + 12
+        y = self.root.winfo_pointery() + 12
+
+        screen_w = popup.winfo_screenwidth()
+        screen_h = popup.winfo_screenheight()
+        x = max(0, min(x, screen_w - width))
+        y = max(0, min(y, screen_h - height))
+        popup.geometry(f"+{x}+{y}")
+
     def _render_calendar(self) -> None:
         popup = self._calendar_state["popup"]
         for w in popup.winfo_children():
