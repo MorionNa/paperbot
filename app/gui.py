@@ -810,6 +810,7 @@ class PaperBotGUI:
                 check=False,
             )
             print(f"[GUI][summary] parse returncode={parse_result.returncode}")
+            print("[GUI][summary] stage=parse_done_start_summarize")
 
             doi_arg = ",".join(selected_dois)
             summarize_cmd = [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py"), "--dois", doi_arg]
@@ -824,6 +825,7 @@ class PaperBotGUI:
                 check=False,
             )
             print(f"[GUI][summary] summarize returncode={summarize_result.returncode}")
+            print("[GUI][summary] stage=summarize_done_render")
         except Exception as e:
             parse_result = subprocess.CompletedProcess(args=["parse_fulltexts.py"], returncode=1, stdout="", stderr=str(e))
             summarize_result = subprocess.CompletedProcess(args=["summarize_papers.py"], returncode=1, stdout="", stderr=str(e))
@@ -864,6 +866,7 @@ class PaperBotGUI:
             return
 
         print(f"[GUI][summary] analyze selected_dois={selected_dois}")
+        print("[GUI][summary] stage=save_config_before_analyze")
         # 分析前强制使用当前页面配置，避免“只填了源地址但没保存 API Key”导致无 key 报错
         if not self.on_save_summary_config(show_success=False):
             return
@@ -871,6 +874,7 @@ class PaperBotGUI:
         self.summary_analyze_btn.config(state=tk.DISABLED)
         self.summary_output.delete("1.0", tk.END)
         self._append_summary_output(f"开始智能分析，共 {len(selected_dois)} 篇...\n")
+        print("[GUI][summary] stage=thread_start")
         threading.Thread(target=self._run_summarize_thread, args=(selected_dois,), daemon=True).start()
 
     def _finish_run(self, result: subprocess.CompletedProcess[str]) -> None:

@@ -114,16 +114,24 @@ def main():
     args = parser.parse_args()
 
     base_dir = Path(__file__).resolve().parents[1]
+    print("[summarize] stage=load_secrets start")
     load_secrets_into_env(base_dir)
+    print("[summarize] stage=load_secrets done")
+    print("[summarize] stage=load_config start")
     cfg = yaml.safe_load((base_dir / "config" / "config.yml").read_text(encoding="utf-8"))
+    print("[summarize] stage=load_config done")
+    print("[summarize] stage=db_connect start")
     conn = connect_sqlite(cfg["pipeline"]["db_url"], base_dir)
     init_db(conn)
+    print("[summarize] stage=db_connect done")
 
     # ------- 通用 LLM client -------
     print("llm.base_url =", cfg["llm"].get("base_url"))
     api_key_env = cfg["llm"].get("api_key_env", "OPENAI_API_KEY")
     print(f"{api_key_env} len =", len(os.getenv(api_key_env, "")))
+    print("[summarize] stage=make_llm start")
     llm = make_llm(cfg)
+    print("[summarize] stage=make_llm done")
 
     limit = int(cfg["summarize"]["limit_per_run"])
     max_chars = int(cfg["summarize"]["chunk_max_chars"])
@@ -133,10 +141,12 @@ def main():
 
     selected_dois = [x.strip() for x in (args.dois or "").split(",") if x.strip()]
     print(f"[summarize] selected_dois={selected_dois}")
+    print("[summarize] stage=fetch_candidates start")
     if selected_dois:
         rows = fetch_unsummarized_by_dois(conn, selected_dois, limit=max(limit, len(selected_dois)))
     else:
         rows = fetch_unsummarized(conn, limit=limit)
+    print("[summarize] stage=fetch_candidates done")
     print(f"to_summarize: {len(rows)}")
 
     if selected_dois:
@@ -182,12 +192,15 @@ def main():
 
             # A) chunk summaries（通用接口）
             c_summaries = []
+            print(f"  -> chunking: chunks={len(chunks)}")
             for k, ch in enumerate(chunks, 1):
+                print(f"  -> chunk summarize start {k}/{len(chunks)}")
                 s = llm.generate_text(
                     system=system_chunk,
                     user=f"Title: {title}\nChunk {k}/{len(chunks)}:\n{ch}",
                     max_output_tokens=300,
                 ).text.strip()
+                print(f"  -> chunk summarize done {k}/{len(chunks)}")
                 c_summaries.append(s)
 
             # B) final structured summary（你问的这段就放在这里）
@@ -198,6 +211,7 @@ def main():
                 "请按 JSON Schema 输出：method_summary / result_summary / keywords / tags / notes。"
             )
 
+            print("  -> final json summarize start")
             data = llm.generate_json(
                 system=system_final,
                 user=user_prompt,
@@ -205,6 +219,7 @@ def main():
                 max_output_tokens=max_output_tokens,
             )
 
+            print("  -> final json summarize done")
             rec = {
                 "model": cfg["llm"]["model"],
                 "method_summary": data.get("method_summary", ""),
@@ -242,6 +257,7 @@ def main():
             )
             print(f"  -> failed: {e!r}", flush=True)
 
+    print("[summarize] stage=db_close")
     conn.close()
     print("Done.")
 
