@@ -30,6 +30,9 @@ def load_secrets_into_env(base_dir: Path, rel_path: str = "config/secrets.yml") 
         "springer_api_key": "SPRINGER_API_KEY",
         "ieee_api_key": "IEEE_API_KEY",
         "custom_llm_api_key": "CUSTOM_LLM_API_KEY",
+        "deepseek_api_key": "DEEPSEEK_API_KEY",
+        "zhipu_api_key": "ZHIPU_API_KEY",
+        "yuanbao_api_key": "YUANBAO_API_KEY",
     }
 
     for k, env_name in mapping.items():

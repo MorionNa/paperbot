@@ -19,12 +19,18 @@ SECRETS_PATH = BASE_DIR / "config" / "secrets.yml"
 PUBLISHERS = ["elsevier", "wiley", "springer", "ieee", "other"]
 UNIFIED_BG = "#f2f3f5"
 SUMMARY_API_PROVIDERS = {
-    "custom": ("CUSTOM_LLM_API_KEY", "custom_llm_api_key"),
-    "openai": ("OPENAI_API_KEY", "openai_api_key"),
-    "dashscope": ("DASHSCOPE_API_KEY", "dashscope_api_key"),
-    "gemini": ("GEMINI_API_KEY", "gemini_api_key"),
-    "anthropic": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
+    # UI选项: (llm.provider, api_key_env, secret_key, 默认base_url)
+    "chatgpt": ("chatgpt", "OPENAI_API_KEY", "openai_api_key", "https://api.openai.com/v1"),
+    "gemini": ("gemini", "GEMINI_API_KEY", "gemini_api_key", ""),
+    "claude": ("claude", "ANTHROPIC_API_KEY", "anthropic_api_key", ""),
+    "千问": ("qwen", "DASHSCOPE_API_KEY", "dashscope_api_key", "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1"),
+    "元宝": ("yuanbao", "YUANBAO_API_KEY", "yuanbao_api_key", ""),
+    "deepseek": ("deepseek", "DEEPSEEK_API_KEY", "deepseek_api_key", "https://api.deepseek.com/v1"),
+    "智谱": ("zhipu", "ZHIPU_API_KEY", "zhipu_api_key", "https://open.bigmodel.cn/api/paas/v4"),
+    "custom": ("custom", "CUSTOM_LLM_API_KEY", "custom_llm_api_key", ""),
 }
+
+PROVIDER_TO_UI = {v[0]: k for k, v in SUMMARY_API_PROVIDERS.items()}
 
 
 def _load_yaml(path: Path) -> dict:
@@ -88,11 +94,11 @@ def _save_provider_api_keys(elsevier_key: str, wiley_key: str, springer_key: str
 def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tokens: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     llm = cfg.setdefault("llm", {})
-    provider = (provider or "custom").strip().lower()
-    env_name, secret_key = SUMMARY_API_PROVIDERS.get(provider, SUMMARY_API_PROVIDERS["custom"])
+    selected = provider if provider in SUMMARY_API_PROVIDERS else "custom"
+    llm_provider, env_name, secret_key, default_base_url = SUMMARY_API_PROVIDERS[selected]
 
-    llm["provider"] = provider
-    llm["base_url"] = base_url.strip()
+    llm["provider"] = llm_provider
+    llm["base_url"] = (base_url or "").strip() or default_base_url
     llm["api_key_env"] = env_name
     if max_tokens.strip():
         llm["max_output_tokens"] = int(max_tokens.strip())
@@ -110,8 +116,9 @@ def _load_saved_gui_settings() -> dict:
     cfg = _load_yaml(CONFIG_PATH)
     sec = _load_yaml(SECRETS_PATH)
     llm = cfg.get("llm") or {}
-    provider = str(llm.get("provider") or "custom").strip().lower()
-    env_name, secret_key = SUMMARY_API_PROVIDERS.get(provider, SUMMARY_API_PROVIDERS["custom"])
+    raw_provider = str(llm.get("provider") or "custom").strip().lower()
+    ui_provider = PROVIDER_TO_UI.get(raw_provider, "custom")
+    llm_provider, env_name, secret_key, _default_base_url = SUMMARY_API_PROVIDERS.get(ui_provider, SUMMARY_API_PROVIDERS["custom"])
     return {
         "elsevier_api_key": sec.get("elsevier_api_key", ""),
         "wiley_tdm_client_token": sec.get("wiley_tdm_client_token", ""),
@@ -119,9 +126,10 @@ def _load_saved_gui_settings() -> dict:
         "ieee_api_key": sec.get("ieee_api_key", ""),
         "summary_base_url": llm.get("base_url", ""),
         "summary_max_tokens": str(llm.get("max_output_tokens", "") or ""),
-        "summary_provider": provider,
+        "summary_provider": ui_provider,
         "summary_api_key": sec.get(secret_key, sec.get("custom_llm_api_key", "")),
         "summary_api_env": env_name,
+        "summary_llm_provider": llm_provider,
     }
 
 def _set_date_range(date_from: str, date_until: str) -> None:
@@ -277,6 +285,8 @@ class PaperBotGUI:
         if max_tokens:
             self.summary_max_tokens.set(max_tokens)
 
+        self.on_summary_provider_change()
+
     def show_page(self, page: str) -> None:
         self.active_page = page
         self.download_page.pack_forget()
@@ -341,13 +351,15 @@ class PaperBotGUI:
         self.summary_max_tokens = tk.StringVar(value="900")
 
         ttk.Label(cfg, text="API 提供商").grid(row=0, column=0, sticky=tk.W, pady=5)
-        ttk.Combobox(
+        provider_box = ttk.Combobox(
             cfg,
             textvariable=self.summary_provider,
             values=list(SUMMARY_API_PROVIDERS.keys()),
             state="readonly",
             width=20,
-        ).grid(row=0, column=1, sticky=tk.W, padx=8, pady=5)
+        )
+        provider_box.grid(row=0, column=1, sticky=tk.W, padx=8, pady=5)
+        provider_box.bind("<<ComboboxSelected>>", lambda _e: self.on_summary_provider_change())
 
         ttk.Label(cfg, text="源地址 (base_url)").grid(row=1, column=0, sticky=tk.W, pady=5)
         ttk.Entry(cfg, textvariable=self.summary_base_url, width=78).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=5)
@@ -620,6 +632,14 @@ class PaperBotGUI:
             max_tokens=max_tokens,
         )
         messagebox.showinfo("成功", "文献总结配置已保存")
+
+    def on_summary_provider_change(self) -> None:
+        selected = self.summary_provider.get()
+        if selected not in SUMMARY_API_PROVIDERS:
+            return
+        _llm_provider, _env, _secret, default_base_url = SUMMARY_API_PROVIDERS[selected]
+        if default_base_url and not self.summary_base_url.get().strip():
+            self.summary_base_url.set(default_base_url)
 
     def _finish_run(self, result: subprocess.CompletedProcess[str]) -> None:
         self.running = False

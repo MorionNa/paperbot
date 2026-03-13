@@ -9,7 +9,19 @@ def make_llm(cfg: dict):
     provider = (llm_cfg.get("provider") or "openai").lower()
     model = llm_cfg.get("model") or ""
 
-    if provider == "openai":
+    # OpenAI-compatible providers
+    openai_compatible = {
+        "openai",
+        "chatgpt",
+        "qwen",
+        "dashscope",
+        "deepseek",
+        "zhipu",
+        "yuanbao",
+        "custom",
+    }
+
+    if provider in openai_compatible:
         return OpenAILLM(
             model=model,
             base_url=llm_cfg.get("base_url"),
@@ -19,7 +31,7 @@ def make_llm(cfg: dict):
     if provider == "gemini":
         return GeminiLLM(model=model)
 
-    if provider == "anthropic":
+    if provider in ("anthropic", "claude"):
         return AnthropicLLM(model=model)
 
     raise ValueError(f"Unknown llm.provider: {provider}")
