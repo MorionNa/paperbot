@@ -234,8 +234,14 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
         conn.close()
 
 
+
+
+def _normalize_doi(value: str) -> str:
+    return (value or "").strip().lower()
+
 def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
-    if not dois:
+    normalized_dois = [_normalize_doi(x) for x in dois if _normalize_doi(x)]
+    if not normalized_dois:
         return {}
     db_path = _get_db_path_from_cfg()
     if not db_path.exists():
@@ -243,18 +249,18 @@ def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
 
     conn = sqlite3.connect(str(db_path))
     try:
-        placeholders = ",".join(["?"] * len(dois))
+        placeholders = ",".join(["?"] * len(normalized_dois))
         rows = conn.execute(
             f"""
             SELECT doi, model, method_summary, result_summary, status, error, summarized_at
             FROM summaries
-            WHERE doi IN ({placeholders})
+            WHERE lower(trim(doi)) IN ({placeholders})
             """,
-            dois,
+            normalized_dois,
         ).fetchall()
         out: dict[str, dict] = {}
         for doi, model, method_summary, result_summary, status, error, summarized_at in rows:
-            out[str(doi)] = {
+            record = {
                 "model": model or "",
                 "method_summary": method_summary or "",
                 "result_summary": result_summary or "",
@@ -262,6 +268,9 @@ def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
                 "error": error or "",
                 "summarized_at": summarized_at or "",
             }
+            raw_key = str(doi or "").strip()
+            out[raw_key] = record
+            out[_normalize_doi(raw_key)] = record
         return out
     finally:
         conn.close()
@@ -749,7 +758,7 @@ class PaperBotGUI:
             self._append_summary_output("未查询到所选文献的总结结果。")
             return
         for doi in selected_dois:
-            d = data.get(doi)
+            d = data.get(str(doi).strip()) or data.get(_normalize_doi(doi))
             if not d:
                 self._append_summary_output(f"DOI: {doi}\n状态: 未总结\n")
                 continue
@@ -801,8 +810,9 @@ class PaperBotGUI:
         for item in selected:
             vals = self.downloaded_tree.item(item, "values")
             doi = (vals[3] if len(vals) >= 4 else "")
+            doi = str(doi).strip()
             if doi:
-                selected_dois.append(str(doi))
+                selected_dois.append(doi)
 
         if not selected_dois:
             messagebox.showwarning("提示", "选中的记录没有 DOI，无法总结")
