@@ -7,7 +7,6 @@ import sqlite3
 from datetime import datetime
 
 from infra.db import connect_sqlite, init_db
-from core.summarize.chunking import chunk_text
 from core.summarize.schema import SUMMARY_SCHEMA
 from infra.llm.types import LLMQuotaError
 
@@ -134,8 +133,6 @@ def main():
     print("[summarize] stage=make_llm done")
 
     limit = int(cfg["summarize"]["limit_per_run"])
-    max_chars = int(cfg["summarize"]["chunk_max_chars"])
-    max_chunks = int(cfg["summarize"]["max_chunks"])
     max_output_tokens = int(cfg["llm"]["max_output_tokens"])
     stop_on_quota = bool(cfg["llm"].get("stop_on_quota", True))
 
@@ -172,12 +169,8 @@ def main():
                 },
             )
 
-    system_chunk = (
-        "你是结构工程科研助理。请阅读论文正文的一个片段，输出该片段的摘要（100-200字），"
-        "重点提炼：方法要点、实验/结果线索、关键术语。用中文输出。"
-    )
     system_final = (
-        "你是结构工程科研助理。请基于论文信息与分块摘要，输出结构化总结。"
+        "你是结构工程科研助理。请基于论文标题、摘要与全文，输出结构化总结。"
         "用中文输出，必要的专业术语保留英文缩写（如 PINN/GNN）。"
         "不要编造不存在的数值或结论。"
     )
@@ -186,32 +179,18 @@ def main():
         print(f"[{i}/{len(rows)}] {doi} ({journal})", flush=True)
 
         try:
-            chunks = chunk_text(body_text, max_chars=max_chars, overlap=300)[:max_chunks]
-            if not chunks:
-                raise RuntimeError("empty chunks")
+            body = (body_text or "").strip()
+            if not body:
+                raise RuntimeError("empty body_text")
 
-            # A) chunk summaries（通用接口）
-            c_summaries = []
-            print(f"  -> chunking: chunks={len(chunks)}")
-            for k, ch in enumerate(chunks, 1):
-                print(f"  -> chunk summarize start {k}/{len(chunks)}")
-                s = llm.generate_text(
-                    system=system_chunk,
-                    user=f"Title: {title}\nChunk {k}/{len(chunks)}:\n{ch}",
-                    max_output_tokens=300,
-                ).text.strip()
-                print(f"  -> chunk summarize done {k}/{len(chunks)}")
-                c_summaries.append(s)
-
-            # B) final structured summary（你问的这段就放在这里）
             user_prompt = (
                 f"Title: {title or ''}\n"
                 f"Abstract: {abstract or ''}\n\n"
-                "Chunk summaries:\n" + "\n".join(f"- {x}" for x in c_summaries if x.strip()) + "\n\n"
+                f"Full text:\n{body}\n\n"
                 "请按 JSON Schema 输出：method_summary / result_summary / keywords / tags / notes。"
             )
 
-            print("  -> final json summarize start")
+            print("  -> full-text json summarize start")
             data = llm.generate_json(
                 system=system_final,
                 user=user_prompt,
@@ -219,7 +198,7 @@ def main():
                 max_output_tokens=max_output_tokens,
             )
 
-            print("  -> final json summarize done")
+            print("  -> full-text json summarize done")
             rec = {
                 "model": cfg["llm"]["model"],
                 "method_summary": data.get("method_summary", ""),
