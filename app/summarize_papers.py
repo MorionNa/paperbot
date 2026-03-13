@@ -154,6 +154,10 @@ def main():
         for d in missing_dois:
             reason = diagnose_selected_doi(conn, d)
             print(f"[summarize] skipped {d}: {reason}")
+            # 已经成功总结过的 DOI 不应被 failed 结果覆盖
+            if reason.startswith("already summarized"):
+                print(f"[summarize] keep existing summary for {d}")
+                continue
             upsert_summary(
                 conn,
                 d,
