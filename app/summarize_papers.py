@@ -109,6 +109,7 @@ def main():
     stop_on_quota = bool(cfg["llm"].get("stop_on_quota", True))
 
     selected_dois = [x.strip() for x in (args.dois or "").split(",") if x.strip()]
+    print(f"[summarize] selected_dois={selected_dois}")
     if selected_dois:
         rows = fetch_unsummarized_by_dois(conn, selected_dois, limit=max(limit, len(selected_dois)))
     else:

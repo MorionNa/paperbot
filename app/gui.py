@@ -251,10 +251,14 @@ def _normalize_doi(value: str) -> str:
 
 def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
     normalized_dois = [_normalize_doi(x) for x in dois if _normalize_doi(x)]
+    print(f"[GUI][summary] selected_dois(raw)={dois}")
+    print(f"[GUI][summary] selected_dois(normalized)={normalized_dois}")
     if not normalized_dois:
+        print("[GUI][summary] skip query: no valid DOI after normalization")
         return {}
     target_set = set(normalized_dois)
     db_path = _get_db_path_from_cfg()
+    print(f"[GUI][summary] db_path={db_path} exists={db_path.exists()}")
     if not db_path.exists():
         return {}
 
@@ -268,12 +272,14 @@ def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
             ORDER BY COALESCE(summarized_at, '') DESC, rowid DESC
             """
         ).fetchall()
+        print(f"[GUI][summary] summaries rows in db={len(rows)}")
         out: dict[str, dict] = {}
         for doi, model, method_summary, result_summary, status, error, summarized_at in rows:
             raw_key = str(doi or "").strip()
             normalized_key = _normalize_doi(raw_key)
             if not normalized_key or normalized_key not in target_set:
                 continue
+            print(f"[GUI][summary] matched doi raw={raw_key} normalized={normalized_key} status={status}")
             record = {
                 "model": model or "",
                 "method_summary": method_summary or "",
@@ -285,6 +291,7 @@ def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
             out[raw_key] = record
             out[normalized_key] = record
             out[str(raw_key).lower()] = record
+        print(f"[GUI][summary] matched records={len(out)}")
         return out
     finally:
         conn.close()
@@ -790,8 +797,10 @@ class PaperBotGUI:
     def _run_summarize_thread(self, selected_dois: list[str]) -> None:
         try:
             doi_arg = ",".join(selected_dois)
+            cmd = [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py"), "--dois", doi_arg]
+            print(f"[GUI][summary] running command={cmd}")
             result = subprocess.run(
-                [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py"), "--dois", doi_arg],
+                cmd,
                 cwd=BASE_DIR,
                 text=True,
                 encoding="utf-8",
@@ -799,8 +808,10 @@ class PaperBotGUI:
                 capture_output=True,
                 check=False,
             )
+            print(f"[GUI][summary] summarize returncode={result.returncode}")
         except Exception as e:
             result = subprocess.CompletedProcess(args=["summarize_papers.py"], returncode=1, stdout="", stderr=str(e))
+            print(f"[GUI][summary] summarize exception={e!r}")
 
         def _done() -> None:
             self.summary_analyze_btn.config(state=tk.NORMAL)
@@ -832,6 +843,7 @@ class PaperBotGUI:
             messagebox.showwarning("提示", "选中的记录没有 DOI，无法总结")
             return
 
+        print(f"[GUI][summary] analyze selected_dois={selected_dois}")
         # 分析前强制使用当前页面配置，避免“只填了源地址但没保存 API Key”导致无 key 报错
         if not self.on_save_summary_config(show_success=False):
             return
