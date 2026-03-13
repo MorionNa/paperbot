@@ -19,15 +19,15 @@ CONFIG_PATH = BASE_DIR / "config" / "config.yml"
 SECRETS_PATH = BASE_DIR / "config" / "secrets.yml"
 PUBLISHERS = ["elsevier", "wiley", "springer", "ieee", "other"]
 SUMMARY_API_PROVIDERS = {
-    # UI选项: (llm.provider, api_key_env, secret_key, 默认base_url)
-    "chatgpt": ("chatgpt", "OPENAI_API_KEY", "openai_api_key", "https://api.openai.com/v1"),
-    "gemini": ("gemini", "GEMINI_API_KEY", "gemini_api_key", ""),
-    "claude": ("claude", "ANTHROPIC_API_KEY", "anthropic_api_key", ""),
-    "千问": ("qwen", "DASHSCOPE_API_KEY", "dashscope_api_key", "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1"),
-    "元宝": ("yuanbao", "YUANBAO_API_KEY", "yuanbao_api_key", ""),
-    "deepseek": ("deepseek", "DEEPSEEK_API_KEY", "deepseek_api_key", "https://api.deepseek.com/v1"),
-    "智谱": ("zhipu", "ZHIPU_API_KEY", "zhipu_api_key", "https://open.bigmodel.cn/api/paas/v4"),
-    "custom": ("custom", "CUSTOM_LLM_API_KEY", "custom_llm_api_key", ""),
+    # UI选项: (llm.provider, api_key_env, secret_key, 默认base_url, base_url_secret_key)
+    "chatgpt": ("chatgpt", "OPENAI_API_KEY", "openai_api_key", "https://api.openai.com/v1", "chatgpt_base_url"),
+    "gemini": ("gemini", "GEMINI_API_KEY", "gemini_api_key", "", "gemini_base_url"),
+    "claude": ("claude", "ANTHROPIC_API_KEY", "anthropic_api_key", "", "claude_base_url"),
+    "千问": ("qwen", "DASHSCOPE_API_KEY", "dashscope_api_key", "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1", "qwen_base_url"),
+    "元宝": ("yuanbao", "YUANBAO_API_KEY", "yuanbao_api_key", "", "yuanbao_base_url"),
+    "deepseek": ("deepseek", "DEEPSEEK_API_KEY", "deepseek_api_key", "https://api.deepseek.com/v1", "deepseek_base_url"),
+    "智谱": ("zhipu", "ZHIPU_API_KEY", "zhipu_api_key", "https://open.bigmodel.cn/api/paas/v4", "zhipu_base_url"),
+    "custom": ("custom", "CUSTOM_LLM_API_KEY", "custom_llm_api_key", "", "custom_base_url"),
 }
 
 PROVIDER_TO_UI = {v[0]: k for k, v in SUMMARY_API_PROVIDERS.items()}
@@ -45,12 +45,10 @@ def _save_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
-def _append_journal(name: str, short_name: str, publisher: str, issn_print: str, issn_online: str) -> None:
+def _append_journal(name: str, publisher: str, issn_print: str, issn_online: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     journals = cfg.setdefault("journals", [])
     journal = {"name": name.strip(), "publisher": publisher.strip().lower()}
-    if short_name.strip():
-        journal["short_name"] = short_name.strip()
     if issn_print.strip():
         journal["issn_print"] = issn_print.strip()
     if issn_online.strip():
@@ -95,7 +93,7 @@ def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tok
     cfg = _load_yaml(CONFIG_PATH)
     llm = cfg.setdefault("llm", {})
     selected = provider if provider in SUMMARY_API_PROVIDERS else "custom"
-    llm_provider, env_name, secret_key, default_base_url = SUMMARY_API_PROVIDERS[selected]
+    llm_provider, env_name, secret_key, default_base_url, base_url_secret_key = SUMMARY_API_PROVIDERS[selected]
 
     llm["provider"] = llm_provider
     llm["base_url"] = (base_url or "").strip() or default_base_url
@@ -107,7 +105,29 @@ def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tok
     secrets = _load_yaml(SECRETS_PATH)
     if api_key.strip():
         secrets[secret_key] = api_key.strip()
+    if base_url.strip():
+        secrets[base_url_secret_key] = base_url.strip()
     _save_yaml(SECRETS_PATH, secrets)
+
+
+def _get_saved_provider_fields(ui_provider: str, cfg: dict | None = None, sec: dict | None = None) -> tuple[str, str]:
+    cfg = cfg or _load_yaml(CONFIG_PATH)
+    sec = sec or _load_yaml(SECRETS_PATH)
+    llm = cfg.get("llm") or {}
+
+    item = SUMMARY_API_PROVIDERS.get(ui_provider, SUMMARY_API_PROVIDERS["custom"])
+    llm_provider, _env_name, secret_key, default_base_url, base_url_secret_key = item
+
+    raw_provider = str(llm.get("provider") or "").strip().lower()
+    if raw_provider == llm_provider:
+        base_url = str(llm.get("base_url") or "").strip()
+    else:
+        base_url = str(sec.get(base_url_secret_key) or "").strip()
+
+    api_key = str(sec.get(secret_key) or "").strip()
+    if not base_url:
+        base_url = default_base_url
+    return base_url, api_key
 
 
 
@@ -118,16 +138,17 @@ def _load_saved_gui_settings() -> dict:
     llm = cfg.get("llm") or {}
     raw_provider = str(llm.get("provider") or "custom").strip().lower()
     ui_provider = PROVIDER_TO_UI.get(raw_provider, "custom")
-    llm_provider, env_name, secret_key, _default_base_url = SUMMARY_API_PROVIDERS.get(ui_provider, SUMMARY_API_PROVIDERS["custom"])
+    llm_provider, env_name, secret_key, _default_base_url, _base_url_secret_key = SUMMARY_API_PROVIDERS.get(ui_provider, SUMMARY_API_PROVIDERS["custom"])
+    saved_base_url, saved_api_key = _get_saved_provider_fields(ui_provider, cfg=cfg, sec=sec)
     return {
         "elsevier_api_key": sec.get("elsevier_api_key", ""),
         "wiley_tdm_client_token": sec.get("wiley_tdm_client_token", ""),
         "springer_api_key": sec.get("springer_api_key", ""),
         "ieee_api_key": sec.get("ieee_api_key", ""),
-        "summary_base_url": llm.get("base_url", ""),
+        "summary_base_url": saved_base_url,
         "summary_max_tokens": str(llm.get("max_output_tokens", "") or ""),
         "summary_provider": ui_provider,
-        "summary_api_key": sec.get(secret_key, sec.get("custom_llm_api_key", "")),
+        "summary_api_key": saved_api_key,
         "summary_api_env": env_name,
         "summary_llm_provider": llm_provider,
     }
@@ -367,21 +388,18 @@ class PaperBotGUI:
         form.pack(fill=tk.X)
 
         self.journal_name = tk.StringVar()
-        self.journal_short = tk.StringVar()
         self.journal_publisher = tk.StringVar(value="elsevier")
         self.journal_issn_print = tk.StringVar()
         self.journal_issn_online = tk.StringVar()
 
         ttk.Label(form, text="期刊名称").grid(row=0, column=0, sticky=tk.W, pady=6)
         ttk.Entry(form, textvariable=self.journal_name, width=42).grid(row=0, column=1, sticky=tk.EW, padx=8, pady=6)
-        ttk.Label(form, text="期刊缩写").grid(row=1, column=0, sticky=tk.W, pady=6)
-        ttk.Entry(form, textvariable=self.journal_short, width=42).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=6)
-        ttk.Label(form, text="出版社").grid(row=2, column=0, sticky=tk.W, pady=6)
-        ttk.Combobox(form, textvariable=self.journal_publisher, values=PUBLISHERS, state="readonly", width=39).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=6)
-        ttk.Label(form, text="ISSN (print，可选)").grid(row=3, column=0, sticky=tk.W, pady=6)
-        ttk.Entry(form, textvariable=self.journal_issn_print, width=42).grid(row=3, column=1, sticky=tk.EW, padx=8, pady=6)
-        ttk.Label(form, text="ISSN (online，可选)").grid(row=4, column=0, sticky=tk.W, pady=6)
-        ttk.Entry(form, textvariable=self.journal_issn_online, width=42).grid(row=4, column=1, sticky=tk.EW, padx=8, pady=6)
+        ttk.Label(form, text="出版社").grid(row=1, column=0, sticky=tk.W, pady=6)
+        ttk.Combobox(form, textvariable=self.journal_publisher, values=PUBLISHERS, state="readonly", width=39).grid(row=1, column=1, sticky=tk.EW, padx=8, pady=6)
+        ttk.Label(form, text="ISSN (print，可选)").grid(row=2, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(form, textvariable=self.journal_issn_print, width=42).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=6)
+        ttk.Label(form, text="ISSN (online，可选)").grid(row=3, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(form, textvariable=self.journal_issn_online, width=42).grid(row=3, column=1, sticky=tk.EW, padx=8, pady=6)
         form.columnconfigure(1, weight=1)
 
         btn_row = ttk.Frame(parent)
@@ -513,7 +531,6 @@ class PaperBotGUI:
             return
         _append_journal(
             name=name,
-            short_name=self.journal_short.get(),
             publisher=self.journal_publisher.get(),
             issn_print=self.journal_issn_print.get(),
             issn_online=self.journal_issn_online.get(),
@@ -627,9 +644,9 @@ class PaperBotGUI:
         selected = self.summary_provider.get()
         if selected not in SUMMARY_API_PROVIDERS:
             return
-        _llm_provider, _env, _secret, default_base_url = SUMMARY_API_PROVIDERS[selected]
-        if default_base_url and not self.summary_base_url.get().strip():
-            self.summary_base_url.set(default_base_url)
+        base_url, api_key = _get_saved_provider_fields(selected)
+        self.summary_base_url.set(base_url)
+        self.summary_api_key.set(api_key)
 
     def _finish_run(self, result: subprocess.CompletedProcess[str]) -> None:
         self.running = False
