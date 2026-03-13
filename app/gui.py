@@ -12,12 +12,12 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 import yaml
+from app.gui_style import apply_theme, BG_MAIN, BG_PANEL, BORDER, TEXT_MAIN
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BASE_DIR / "config" / "config.yml"
 SECRETS_PATH = BASE_DIR / "config" / "secrets.yml"
 PUBLISHERS = ["elsevier", "wiley", "springer", "ieee", "other"]
-UNIFIED_BG = "#f2f3f5"
 SUMMARY_API_PROVIDERS = {
     # UI选项: (llm.provider, api_key_env, secret_key, 默认base_url)
     "chatgpt": ("chatgpt", "OPENAI_API_KEY", "openai_api_key", "https://api.openai.com/v1"),
@@ -222,21 +222,10 @@ class PaperBotGUI:
         self.show_page("download")
 
     def _build_styles(self) -> None:
-        style = ttk.Style(self.root)
-        if "clam" in style.theme_names():
-            style.theme_use("clam")
-
-        style.configure("Sidebar.TFrame", background=UNIFIED_BG)
-        style.configure("Main.TFrame", background=UNIFIED_BG)
-        style.configure("Card.TLabelframe", background="#ffffff")
-        style.configure("Card.TLabelframe.Label", background="#ffffff", font=("Microsoft YaHei", 12, "bold"))
-        style.configure("Menu.TButton", font=("Microsoft YaHei", 13), padding=(12, 8))
-        style.configure("MenuActive.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(12, 8), foreground="#1d4ed8")
-        style.configure("Primary.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(16, 10))
-        style.configure("Success.TButton", font=("Microsoft YaHei", 13, "bold"), padding=(14, 8))
+        apply_theme(self.root)
 
     def _build_layout(self) -> None:
-        shell = ttk.Frame(self.root)
+        shell = ttk.Frame(self.root, style="Main.TFrame")
         shell.pack(fill=tk.BOTH, expand=True)
 
         self.sidebar = ttk.Frame(shell, width=290, style="Sidebar.TFrame")
@@ -250,8 +239,8 @@ class PaperBotGUI:
         self._build_pages()
 
     def _build_sidebar(self) -> None:
-        ttk.Label(self.sidebar, text="论文库下载工具", background=UNIFIED_BG, font=("Microsoft YaHei", 20, "bold")).pack(anchor=tk.W, padx=26, pady=(28, 2))
-        ttk.Label(self.sidebar, text="Paper Downloader", background=UNIFIED_BG, foreground="#64748b", font=("Microsoft YaHei", 13)).pack(anchor=tk.W, padx=26, pady=(0, 24))
+        ttk.Label(self.sidebar, text="论文库下载工具", background=BG_MAIN, font=("Microsoft YaHei", 20, "bold")).pack(anchor=tk.W, padx=26, pady=(28, 2))
+        ttk.Label(self.sidebar, text="Paper Downloader", background=BG_MAIN, foreground="#64748b", font=("Microsoft YaHei", 13)).pack(anchor=tk.W, padx=26, pady=(0, 24))
 
         self.btn_download = ttk.Button(self.sidebar, text="📘  文献下载", command=lambda: self.show_page("download"))
         self.btn_download.pack(fill=tk.X, padx=18, pady=6)
@@ -259,7 +248,7 @@ class PaperBotGUI:
         self.btn_summary = ttk.Button(self.sidebar, text="🧠  文献总结", command=lambda: self.show_page("summary"))
         self.btn_summary.pack(fill=tk.X, padx=18, pady=6)
 
-        ttk.Label(self.sidebar, text="Version 1.0", background=UNIFIED_BG, foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
+        ttk.Label(self.sidebar, text="Version 1.0", background=BG_MAIN, foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
 
     def _build_pages(self) -> None:
         self.download_page = ttk.Frame(self.main, style="Main.TFrame")
@@ -432,10 +421,10 @@ class PaperBotGUI:
         for title, var, url in rows:
             row = ttk.Frame(parent)
             row.pack(fill=tk.X, pady=8)
-            title_row = tk.Frame(row, bg=UNIFIED_BG)
+            title_row = tk.Frame(row, bg=BG_PANEL)
             title_row.pack(fill=tk.X)
-            tk.Label(title_row, text=title, font=("Microsoft YaHei", 12, "bold"), bg=UNIFIED_BG).pack(side=tk.LEFT)
-            link = tk.Label(title_row, text=f"点我获取{title}", fg="#2563eb", cursor="hand2", font=("Microsoft YaHei", 10, "underline"), bg=UNIFIED_BG)
+            tk.Label(title_row, text=title, font=("Microsoft YaHei", 12, "bold"), bg=BG_PANEL).pack(side=tk.LEFT)
+            link = tk.Label(title_row, text=f"点我获取{title}", fg="#2563eb", cursor="hand2", font=("Microsoft YaHei", 10, "underline"), bg=BG_PANEL)
             link.pack(side=tk.LEFT, padx=(10, 0))
             link.bind("<Button-1>", lambda _e, u=url: self.open_api_link(u))
 
@@ -476,7 +465,7 @@ class PaperBotGUI:
         right = ttk.Frame(grid)
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         ttk.Label(right, text="任务日志", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
-        self.output_box = tk.Text(right, height=11, wrap="word", font=("Consolas", 11))
+        self.output_box = tk.Text(right, height=11, wrap="word", font=("Consolas", 11), bg="#FFFFFF", fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat", highlightthickness=1, highlightbackground=BORDER, padx=10, pady=8)
         self.output_box.pack(fill=tk.BOTH, expand=True, pady=(6, 8))
 
         self.progress_var = tk.IntVar(value=0)
@@ -552,6 +541,7 @@ class PaperBotGUI:
 
     def open_calendar(self, target_var: tk.StringVar) -> None:
         popup = tk.Toplevel(self.root)
+        popup.configure(bg=BG_PANEL)
         popup.title("选择日期")
         popup.resizable(False, False)
         popup.transient(self.root)
