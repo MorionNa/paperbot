@@ -228,6 +228,39 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
         conn.close()
 
 
+def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
+    if not dois:
+        return {}
+    db_path = _get_db_path_from_cfg()
+    if not db_path.exists():
+        return {}
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        placeholders = ",".join(["?"] * len(dois))
+        rows = conn.execute(
+            f"""
+            SELECT doi, model, method_summary, result_summary, status, error, summarized_at
+            FROM summaries
+            WHERE doi IN ({placeholders})
+            """,
+            dois,
+        ).fetchall()
+        out: dict[str, dict] = {}
+        for doi, model, method_summary, result_summary, status, error, summarized_at in rows:
+            out[str(doi)] = {
+                "model": model or "",
+                "method_summary": method_summary or "",
+                "result_summary": result_summary or "",
+                "status": status or "",
+                "error": error or "",
+                "summarized_at": summarized_at or "",
+            }
+        return out
+    finally:
+        conn.close()
+
+
 class PaperBotGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -332,10 +365,10 @@ class PaperBotGUI:
 
     def _build_summary_page(self, parent: ttk.Frame) -> None:
         top = ttk.LabelFrame(parent, text="已下载文献", padding=14, style="Card.TLabelframe")
-        top.pack(fill=tk.BOTH, expand=True)
+        top.pack(fill=tk.X, expand=False)
 
         cols = ("published", "title", "journal", "doi", "status")
-        self.downloaded_tree = ttk.Treeview(top, columns=cols, show="headings", height=14)
+        self.downloaded_tree = ttk.Treeview(top, columns=cols, show="headings", height=8, selectmode="extended")
         self.downloaded_tree.heading("published", text="日期")
         self.downloaded_tree.heading("title", text="标题")
         self.downloaded_tree.heading("journal", text="期刊")
@@ -351,6 +384,12 @@ class PaperBotGUI:
         self.downloaded_tree.configure(yscrollcommand=ybar.set)
         self.downloaded_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         ybar.pack(side=tk.LEFT, fill=tk.Y)
+
+        action_bar = ttk.Frame(parent)
+        action_bar.pack(fill=tk.X, pady=(8, 0))
+        self.summary_analyze_btn = ttk.Button(action_bar, text="智能分析", style="Primary.TButton", command=self.on_analyze_selected)
+        self.summary_analyze_btn.pack(side=tk.LEFT)
+        ttk.Button(action_bar, text="刷新文献", command=self.refresh_downloaded_articles_table).pack(side=tk.LEFT, padx=8)
 
         cfg = ttk.LabelFrame(parent, text="大模型配置", padding=14, style="Card.TLabelframe")
         cfg.pack(fill=tk.X, pady=(14, 0))
@@ -382,6 +421,24 @@ class PaperBotGUI:
 
         ttk.Button(cfg, text="确定", style="Success.TButton", command=self.on_save_summary_config).grid(row=4, column=1, sticky=tk.E, pady=(8, 0))
         cfg.columnconfigure(1, weight=1)
+
+        out = ttk.LabelFrame(parent, text="总结结果", padding=14, style="Card.TLabelframe")
+        out.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
+        self.summary_output = tk.Text(
+            out,
+            height=10,
+            wrap="word",
+            font=("Consolas", 10),
+            bg="#FFFFFF",
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            padx=10,
+            pady=8,
+        )
+        self.summary_output.pack(fill=tk.BOTH, expand=True)
 
     def _build_journal_panel(self, parent: ttk.LabelFrame) -> None:
         form = ttk.Frame(parent)
@@ -647,6 +704,80 @@ class PaperBotGUI:
         base_url, api_key = _get_saved_provider_fields(selected)
         self.summary_base_url.set(base_url)
         self.summary_api_key.set(api_key)
+
+    def _append_summary_output(self, text: str) -> None:
+        self.summary_output.insert(tk.END, text + "\n")
+        self.summary_output.see(tk.END)
+
+    def _render_summary_for_selected(self, selected_dois: list[str]) -> None:
+        data = _load_summaries_for_dois(selected_dois)
+        self.summary_output.delete("1.0", tk.END)
+        if not data:
+            self._append_summary_output("未查询到所选文献的总结结果。")
+            return
+        for doi in selected_dois:
+            d = data.get(doi)
+            if not d:
+                self._append_summary_output(f"DOI: {doi}\n状态: 未总结\n")
+                continue
+            self._append_summary_output(
+                f"DOI: {doi}\n"
+                f"状态: {d.get('status','')}\n"
+                f"模型: {d.get('model','')}\n"
+                f"总结时间: {d.get('summarized_at','')}\n"
+                f"方法总结:\n{d.get('method_summary','')}\n\n"
+                f"结果总结:\n{d.get('result_summary','')}\n"
+                f"错误: {d.get('error','')}\n"
+                + "-" * 80
+            )
+
+    def _run_summarize_thread(self, selected_dois: list[str]) -> None:
+        try:
+            result = subprocess.run(
+                [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py")],
+                cwd=BASE_DIR,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+        except Exception as e:
+            result = subprocess.CompletedProcess(args=["summarize_papers.py"], returncode=1, stdout="", stderr=str(e))
+
+        def _done() -> None:
+            self.summary_analyze_btn.config(state=tk.NORMAL)
+            self.summary_output.delete("1.0", tk.END)
+            self._append_summary_output("[summarize_papers.py STDOUT]")
+            self._append_summary_output(result.stdout or "(empty)")
+            self._append_summary_output("\n[summarize_papers.py STDERR]")
+            self._append_summary_output(result.stderr or "(empty)")
+            self._append_summary_output("\n[所选文献总结结果]")
+            self._render_summary_for_selected(selected_dois)
+
+        self.root.after(0, _done)
+
+    def on_analyze_selected(self) -> None:
+        selected = self.downloaded_tree.selection()
+        if not selected:
+            messagebox.showwarning("提示", "请先选择要总结的文献（支持单选/多选）")
+            return
+
+        selected_dois: list[str] = []
+        for item in selected:
+            vals = self.downloaded_tree.item(item, "values")
+            doi = (vals[3] if len(vals) >= 4 else "")
+            if doi:
+                selected_dois.append(str(doi))
+
+        if not selected_dois:
+            messagebox.showwarning("提示", "选中的记录没有 DOI，无法总结")
+            return
+
+        self.summary_analyze_btn.config(state=tk.DISABLED)
+        self.summary_output.delete("1.0", tk.END)
+        self._append_summary_output(f"开始智能分析，共 {len(selected_dois)} 篇...\n")
+        threading.Thread(target=self._run_summarize_thread, args=(selected_dois,), daemon=True).start()
 
     def _finish_run(self, result: subprocess.CompletedProcess[str]) -> None:
         self.running = False
