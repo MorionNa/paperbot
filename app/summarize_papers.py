@@ -1,5 +1,6 @@
 # app/summarize_papers.py
 from __future__ import annotations
+import argparse
 import os
 import json
 import sqlite3
@@ -29,6 +30,26 @@ def fetch_unsummarized(conn: sqlite3.Connection, limit: int = 20):
         LIMIT ?;
         """,
         (limit,),
+    ).fetchall()
+
+
+def fetch_unsummarized_by_dois(conn: sqlite3.Connection, dois: list[str], limit: int = 200):
+    if not dois:
+        return []
+    placeholders = ",".join(["?"] * len(dois))
+    return conn.execute(
+        f"""
+        SELECT p.doi, p.title, p.abstract, p.body_text, a.journal
+        FROM parsed_texts p
+        LEFT JOIN summaries s ON s.doi = p.doi
+        LEFT JOIN articles a ON a.doi = p.doi
+        WHERE p.doi IN ({placeholders})
+          AND (s.doi IS NULL OR s.status != 'ok')
+          AND p.body_text IS NOT NULL AND length(p.body_text) > 1000
+        ORDER BY p.parsed_at DESC
+        LIMIT ?;
+        """,
+        (*dois, limit),
     ).fetchall()
 
 
@@ -65,6 +86,10 @@ def upsert_summary(conn: sqlite3.Connection, doi: str, rec: dict):
     conn.commit()
 
 def main():
+    parser = argparse.ArgumentParser(description="Summarize parsed papers")
+    parser.add_argument("--dois", type=str, default="", help="Comma-separated DOI list. If set, summarize only these DOIs.")
+    args = parser.parse_args()
+
     base_dir = Path(__file__).resolve().parents[1]
     load_secrets_into_env(base_dir)
     cfg = yaml.safe_load((base_dir / "config" / "config.yml").read_text(encoding="utf-8"))
@@ -82,7 +107,11 @@ def main():
     max_output_tokens = int(cfg["llm"]["max_output_tokens"])
     stop_on_quota = bool(cfg["llm"].get("stop_on_quota", True))
 
-    rows = fetch_unsummarized(conn, limit=limit)
+    selected_dois = [x.strip() for x in (args.dois or "").split(",") if x.strip()]
+    if selected_dois:
+        rows = fetch_unsummarized_by_dois(conn, selected_dois, limit=max(limit, len(selected_dois)))
+    else:
+        rows = fetch_unsummarized(conn, limit=limit)
     print(f"to_summarize: {len(rows)}")
 
     system_chunk = (

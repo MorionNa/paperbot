@@ -733,8 +733,9 @@ class PaperBotGUI:
 
     def _run_summarize_thread(self, selected_dois: list[str]) -> None:
         try:
+            doi_arg = ",".join(selected_dois)
             result = subprocess.run(
-                [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py")],
+                [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py"), "--dois", doi_arg],
                 cwd=BASE_DIR,
                 text=True,
                 encoding="utf-8",
