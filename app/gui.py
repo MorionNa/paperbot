@@ -237,7 +237,16 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
 
 
 def _normalize_doi(value: str) -> str:
-    return (value or "").strip().lower()
+    v = (value or "").strip().lower()
+    if not v:
+        return ""
+    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/"):
+        if v.startswith(prefix):
+            v = v[len(prefix):].strip()
+            break
+    if v.startswith("doi:"):
+        v = v[4:].strip()
+    return v
 
 def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
     normalized_dois = [_normalize_doi(x) for x in dois if _normalize_doi(x)]
@@ -249,14 +258,29 @@ def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
 
     conn = sqlite3.connect(str(db_path))
     try:
-        placeholders = ",".join(["?"] * len(normalized_dois))
+        # 兼容 summaries.doi 里可能保存成 doi:xxx / https://doi.org/xxx 等形式
+        candidates: list[str] = []
+        for d in normalized_dois:
+            candidates.extend(
+                [
+                    d,
+                    f"doi:{d}",
+                    f"https://doi.org/{d}",
+                    f"http://doi.org/{d}",
+                    f"https://dx.doi.org/{d}",
+                    f"http://dx.doi.org/{d}",
+                ]
+            )
+        # 保序去重
+        candidate_values = list(dict.fromkeys(candidates))
+        placeholders = ",".join(["?"] * len(candidate_values))
         rows = conn.execute(
             f"""
             SELECT doi, model, method_summary, result_summary, status, error, summarized_at
             FROM summaries
             WHERE lower(trim(doi)) IN ({placeholders})
             """,
-            normalized_dois,
+            candidate_values,
         ).fetchall()
         out: dict[str, dict] = {}
         for doi, model, method_summary, result_summary, status, error, summarized_at in rows:
@@ -271,6 +295,7 @@ def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
             raw_key = str(doi or "").strip()
             out[raw_key] = record
             out[_normalize_doi(raw_key)] = record
+            out[str(raw_key).lower()] = record
         return out
     finally:
         conn.close()
