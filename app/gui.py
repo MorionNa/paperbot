@@ -246,44 +246,34 @@ def _normalize_doi(value: str) -> str:
             break
     if v.startswith("doi:"):
         v = v[4:].strip()
-    return v
+    v = v.split("?", 1)[0].split("#", 1)[0].strip()
+    return v.rstrip("/.")
 
 def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
     normalized_dois = [_normalize_doi(x) for x in dois if _normalize_doi(x)]
     if not normalized_dois:
         return {}
+    target_set = set(normalized_dois)
     db_path = _get_db_path_from_cfg()
     if not db_path.exists():
         return {}
 
     conn = sqlite3.connect(str(db_path))
     try:
-        # 兼容 summaries.doi 里可能保存成 doi:xxx / https://doi.org/xxx 等形式
-        candidates: list[str] = []
-        for d in normalized_dois:
-            candidates.extend(
-                [
-                    d,
-                    f"doi:{d}",
-                    f"https://doi.org/{d}",
-                    f"http://doi.org/{d}",
-                    f"https://dx.doi.org/{d}",
-                    f"http://dx.doi.org/{d}",
-                ]
-            )
-        # 保序去重
-        candidate_values = list(dict.fromkeys(candidates))
-        placeholders = ",".join(["?"] * len(candidate_values))
+        # 读取 summaries 后在 Python 侧做 DOI 归一化匹配，兼容多种历史存储格式
         rows = conn.execute(
-            f"""
+            """
             SELECT doi, model, method_summary, result_summary, status, error, summarized_at
             FROM summaries
-            WHERE lower(trim(doi)) IN ({placeholders})
-            """,
-            candidate_values,
+            ORDER BY COALESCE(summarized_at, '') DESC, rowid DESC
+            """
         ).fetchall()
         out: dict[str, dict] = {}
         for doi, model, method_summary, result_summary, status, error, summarized_at in rows:
+            raw_key = str(doi or "").strip()
+            normalized_key = _normalize_doi(raw_key)
+            if not normalized_key or normalized_key not in target_set:
+                continue
             record = {
                 "model": model or "",
                 "method_summary": method_summary or "",
@@ -292,9 +282,8 @@ def _load_summaries_for_dois(dois: list[str]) -> dict[str, dict]:
                 "error": error or "",
                 "summarized_at": summarized_at or "",
             }
-            raw_key = str(doi or "").strip()
             out[raw_key] = record
-            out[_normalize_doi(raw_key)] = record
+            out[normalized_key] = record
             out[str(raw_key).lower()] = record
         return out
     finally:
