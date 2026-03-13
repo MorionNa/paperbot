@@ -795,12 +795,13 @@ class PaperBotGUI:
             )
 
     def _run_summarize_thread(self, selected_dois: list[str]) -> None:
+        parse_result: subprocess.CompletedProcess[str]
+        summarize_result: subprocess.CompletedProcess[str]
         try:
-            doi_arg = ",".join(selected_dois)
-            cmd = [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py"), "--dois", doi_arg]
-            print(f"[GUI][summary] running command={cmd}")
-            result = subprocess.run(
-                cmd,
+            parse_cmd = [sys.executable, str(BASE_DIR / "app" / "parse_fulltexts.py")]
+            print(f"[GUI][summary] running parser command={parse_cmd}")
+            parse_result = subprocess.run(
+                parse_cmd,
                 cwd=BASE_DIR,
                 text=True,
                 encoding="utf-8",
@@ -808,18 +809,37 @@ class PaperBotGUI:
                 capture_output=True,
                 check=False,
             )
-            print(f"[GUI][summary] summarize returncode={result.returncode}")
+            print(f"[GUI][summary] parse returncode={parse_result.returncode}")
+
+            doi_arg = ",".join(selected_dois)
+            summarize_cmd = [sys.executable, str(BASE_DIR / "app" / "summarize_papers.py"), "--dois", doi_arg]
+            print(f"[GUI][summary] running summarize command={summarize_cmd}")
+            summarize_result = subprocess.run(
+                summarize_cmd,
+                cwd=BASE_DIR,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            print(f"[GUI][summary] summarize returncode={summarize_result.returncode}")
         except Exception as e:
-            result = subprocess.CompletedProcess(args=["summarize_papers.py"], returncode=1, stdout="", stderr=str(e))
-            print(f"[GUI][summary] summarize exception={e!r}")
+            parse_result = subprocess.CompletedProcess(args=["parse_fulltexts.py"], returncode=1, stdout="", stderr=str(e))
+            summarize_result = subprocess.CompletedProcess(args=["summarize_papers.py"], returncode=1, stdout="", stderr=str(e))
+            print(f"[GUI][summary] summarize flow exception={e!r}")
 
         def _done() -> None:
             self.summary_analyze_btn.config(state=tk.NORMAL)
             self.summary_output.delete("1.0", tk.END)
-            self._append_summary_output("[summarize_papers.py STDOUT]")
-            self._append_summary_output(result.stdout or "(empty)")
+            self._append_summary_output("[parse_fulltexts.py STDOUT]")
+            self._append_summary_output(parse_result.stdout or "(empty)")
+            self._append_summary_output("\n[parse_fulltexts.py STDERR]")
+            self._append_summary_output(parse_result.stderr or "(empty)")
+            self._append_summary_output("\n[summarize_papers.py STDOUT]")
+            self._append_summary_output(summarize_result.stdout or "(empty)")
             self._append_summary_output("\n[summarize_papers.py STDERR]")
-            self._append_summary_output(result.stderr or "(empty)")
+            self._append_summary_output(summarize_result.stderr or "(empty)")
             self._append_summary_output("\n[所选文献总结结果]")
             self._render_summary_for_selected(selected_dois)
 
