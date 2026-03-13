@@ -16,7 +16,7 @@ SELECT_BG = "#DBEAFE"
 
 def apply_theme(root: tk.Tk) -> None:
     root.configure(bg=BG_MAIN)
-    root.option_add("*Font", "Microsoft YaHei 10")
+    root.option_add("*Font", "Arial 10")
 
     style = ttk.Style(root)
     if "clam" in style.theme_names():
@@ -38,7 +38,7 @@ def apply_theme(root: tk.Tk) -> None:
         "Card.TLabelframe.Label",
         background=BG_PANEL,
         foreground=TEXT_MAIN,
-        font=("Microsoft YaHei", 12, "bold"),
+        font=("Arial", 12, "bold"),
     )
 
     # Text labels
@@ -47,7 +47,7 @@ def apply_theme(root: tk.Tk) -> None:
     # Buttons
     style.configure(
         "Menu.TButton",
-        font=("Microsoft YaHei", 12),
+        font=("Arial", 12),
         padding=(12, 8),
         background=BG_MAIN,
         foreground=TEXT_MAIN,
@@ -62,7 +62,7 @@ def apply_theme(root: tk.Tk) -> None:
 
     style.configure(
         "MenuActive.TButton",
-        font=("Microsoft YaHei", 12, "bold"),
+        font=("Arial", 12, "bold"),
         padding=(12, 8),
         background="#EEF2FF",
         foreground=PRIMARY_ACTIVE,
@@ -72,7 +72,7 @@ def apply_theme(root: tk.Tk) -> None:
 
     style.configure(
         "Primary.TButton",
-        font=("Microsoft YaHei", 12, "bold"),
+        font=("Arial", 12, "bold"),
         padding=(16, 10),
         background=PRIMARY,
         foreground="#FFFFFF",
@@ -87,7 +87,7 @@ def apply_theme(root: tk.Tk) -> None:
 
     style.configure(
         "Success.TButton",
-        font=("Microsoft YaHei", 12, "bold"),
+        font=("Arial", 12, "bold"),
         padding=(14, 8),
         background=PRIMARY,
         foreground="#FFFFFF",
@@ -146,7 +146,7 @@ def apply_theme(root: tk.Tk) -> None:
         bordercolor=BORDER,
         relief="flat",
         padding=8,
-        font=("Microsoft YaHei", 10, "bold"),
+        font=("Arial", 10, "bold"),
     )
     style.map("Treeview.Heading", background=[("active", "#F3F4F6")])
 

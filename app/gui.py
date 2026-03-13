@@ -239,8 +239,8 @@ class PaperBotGUI:
         self._build_pages()
 
     def _build_sidebar(self) -> None:
-        ttk.Label(self.sidebar, text="论文库下载工具", background=BG_MAIN, font=("Microsoft YaHei", 20, "bold")).pack(anchor=tk.W, padx=26, pady=(28, 2))
-        ttk.Label(self.sidebar, text="Paper Downloader", background=BG_MAIN, foreground="#64748b", font=("Microsoft YaHei", 13)).pack(anchor=tk.W, padx=26, pady=(0, 24))
+        ttk.Label(self.sidebar, text="论文库下载工具", background=BG_MAIN, font=("Arial", 20, "bold")).pack(anchor=tk.W, padx=26, pady=(28, 2))
+        ttk.Label(self.sidebar, text="Paper Downloader", background=BG_MAIN, foreground="#64748b", font=("Arial", 13)).pack(anchor=tk.W, padx=26, pady=(0, 24))
 
         self.btn_download = ttk.Button(self.sidebar, text="📘  文献下载", command=lambda: self.show_page("download"))
         self.btn_download.pack(fill=tk.X, padx=18, pady=6)
@@ -248,7 +248,7 @@ class PaperBotGUI:
         self.btn_summary = ttk.Button(self.sidebar, text="🧠  文献总结", command=lambda: self.show_page("summary"))
         self.btn_summary.pack(fill=tk.X, padx=18, pady=6)
 
-        ttk.Label(self.sidebar, text="Version 1.0", background=BG_MAIN, foreground="#64748b", font=("Microsoft YaHei", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
+        ttk.Label(self.sidebar, text="Version 1.0", background=BG_MAIN, foreground="#64748b", font=("Arial", 12)).pack(side=tk.BOTTOM, anchor=tk.W, padx=26, pady=20)
 
     def _build_pages(self) -> None:
         self.download_page = ttk.Frame(self.main, style="Main.TFrame")
@@ -389,7 +389,7 @@ class PaperBotGUI:
         ttk.Button(btn_row, text="＋ 添加", command=self.on_add_journal, style="Primary.TButton").pack(side=tk.LEFT)
         ttk.Button(btn_row, text="删除选中", command=self.on_delete_journal).pack(side=tk.LEFT, padx=8)
 
-        ttk.Label(parent, text="已添加期刊", font=("Microsoft YaHei", 13, "bold")).pack(anchor=tk.W, pady=(4, 6))
+        ttk.Label(parent, text="已添加期刊", font=("Arial", 13, "bold")).pack(anchor=tk.W, pady=(4, 6))
 
         cols = ("name", "publisher", "issn")
         self.journal_tree = ttk.Treeview(parent, columns=cols, show="headings", height=9)
@@ -423,15 +423,15 @@ class PaperBotGUI:
             row.pack(fill=tk.X, pady=8)
             title_row = tk.Frame(row, bg=BG_PANEL)
             title_row.pack(fill=tk.X)
-            tk.Label(title_row, text=title, font=("Microsoft YaHei", 12, "bold"), bg=BG_PANEL).pack(side=tk.LEFT)
-            link = tk.Label(title_row, text=f"点我获取{title}", fg="#2563eb", cursor="hand2", font=("Microsoft YaHei", 10, "underline"), bg=BG_PANEL)
+            tk.Label(title_row, text=title, font=("Arial", 12, "bold"), bg=BG_PANEL).pack(side=tk.LEFT)
+            link = tk.Label(title_row, text=f"点我获取{title}", fg="#2563eb", cursor="hand2", font=("Arial", 10, "underline"), bg=BG_PANEL)
             link.pack(side=tk.LEFT, padx=(10, 0))
             link.bind("<Button-1>", lambda _e, u=url: self.open_api_link(u))
 
             entry_row = ttk.Frame(row)
             entry_row.pack(fill=tk.X, pady=(2, 0))
             ttk.Entry(entry_row, textvariable=var, width=42).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            ttk.Label(entry_row, text="✅", foreground="#10b981", font=("Microsoft YaHei", 14)).pack(side=tk.LEFT, padx=8)
+            ttk.Label(entry_row, text="✅", foreground="#10b981", font=("Arial", 14)).pack(side=tk.LEFT, padx=8)
 
         ttk.Button(parent, text="✔ 保存", command=self.on_save_provider_keys, style="Success.TButton").pack(anchor=tk.E, pady=(18, 0))
 
@@ -442,14 +442,14 @@ class PaperBotGUI:
         left = ttk.Frame(grid)
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 16))
 
-        ttk.Label(left, text="开始时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+        ttk.Label(left, text="开始时间", font=("Arial", 12, "bold")).pack(anchor=tk.W)
         self.date_from = tk.StringVar(value=(date.today() - timedelta(days=30)).isoformat())
         from_row = ttk.Frame(left)
         from_row.pack(anchor=tk.W, pady=(6, 12))
         ttk.Entry(from_row, textvariable=self.date_from, width=22, state="readonly").pack(side=tk.LEFT)
         ttk.Button(from_row, text="📅", width=3, command=lambda: self.open_calendar(self.date_from)).pack(side=tk.LEFT, padx=(6, 0))
 
-        ttk.Label(left, text="结束时间", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+        ttk.Label(left, text="结束时间", font=("Arial", 12, "bold")).pack(anchor=tk.W)
         self.date_until = tk.StringVar(value=date.today().isoformat())
         until_row = ttk.Frame(left)
         until_row.pack(anchor=tk.W, pady=(6, 12))
@@ -464,7 +464,7 @@ class PaperBotGUI:
 
         right = ttk.Frame(grid)
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ttk.Label(right, text="任务日志", font=("Microsoft YaHei", 12, "bold")).pack(anchor=tk.W)
+        ttk.Label(right, text="任务日志", font=("Arial", 12, "bold")).pack(anchor=tk.W)
         self.output_box = tk.Text(right, height=11, wrap="word", font=("Consolas", 11), bg="#FFFFFF", fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat", highlightthickness=1, highlightbackground=BORDER, padx=10, pady=8)
         self.output_box.pack(fill=tk.BOTH, expand=True, pady=(6, 8))
 
@@ -566,7 +566,7 @@ class PaperBotGUI:
         header = ttk.Frame(popup, padding=8)
         header.pack(fill=tk.X)
         ttk.Button(header, text="<", width=3, command=lambda: self._move_month(-1)).pack(side=tk.LEFT)
-        ttk.Label(header, text=f"{year}-{month:02d}", font=("Microsoft YaHei", 12, "bold")).pack(side=tk.LEFT, padx=10)
+        ttk.Label(header, text=f"{year}-{month:02d}", font=("Arial", 12, "bold")).pack(side=tk.LEFT, padx=10)
         ttk.Button(header, text=">", width=3, command=lambda: self._move_month(1)).pack(side=tk.LEFT)
 
         grid = ttk.Frame(popup, padding=(8, 0, 8, 8))
