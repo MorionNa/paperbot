@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import re
 import sqlite3
 import subprocess
 import sys
@@ -834,6 +835,13 @@ class PaperBotGUI:
         def _done() -> None:
             self.summary_analyze_btn.config(state=tk.NORMAL)
             self.summary_output.delete("1.0", tk.END)
+
+            parsed_count = "未知"
+            m = re.search(r"parsed_success_count:\s*(\d+)", parse_result.stdout or "")
+            if m:
+                parsed_count = m.group(1)
+            self._append_summary_output(f"解析完成：成功解析 {parsed_count} 篇文献")
+
             self._append_summary_output("[parse_fulltexts.py STDOUT]")
             self._append_summary_output(parse_result.stdout or "(empty)")
             self._append_summary_output("\n[parse_fulltexts.py STDERR]")
