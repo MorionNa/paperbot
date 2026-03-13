@@ -92,12 +92,18 @@ def _save_provider_api_keys(elsevier_key: str, wiley_key: str, springer_key: str
 def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tokens: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     llm = cfg.setdefault("llm", {})
-    selected = provider if provider in SUMMARY_API_PROVIDERS else "custom"
-    llm_provider, env_name, secret_key, default_base_url, base_url_secret_key = SUMMARY_API_PROVIDERS[selected]
+    gui = cfg.setdefault("gui", {})
+    summary_base_urls = gui.setdefault("summary_base_urls", {})
 
+    selected = provider if provider in SUMMARY_API_PROVIDERS else "custom"
+    llm_provider, env_name, secret_key, default_base_url, _base_url_secret_key = SUMMARY_API_PROVIDERS[selected]
+
+    normalized_base_url = (base_url or "").strip() or default_base_url
     llm["provider"] = llm_provider
-    llm["base_url"] = (base_url or "").strip() or default_base_url
+    llm["base_url"] = normalized_base_url
     llm["api_key_env"] = env_name
+    summary_base_urls[selected] = normalized_base_url
+
     if max_tokens.strip():
         llm["max_output_tokens"] = int(max_tokens.strip())
     _save_yaml(CONFIG_PATH, cfg)
@@ -105,8 +111,6 @@ def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tok
     secrets = _load_yaml(SECRETS_PATH)
     if api_key.strip():
         secrets[secret_key] = api_key.strip()
-    if base_url.strip():
-        secrets[base_url_secret_key] = base_url.strip()
     _save_yaml(SECRETS_PATH, secrets)
 
 
@@ -114,15 +118,17 @@ def _get_saved_provider_fields(ui_provider: str, cfg: dict | None = None, sec: d
     cfg = cfg or _load_yaml(CONFIG_PATH)
     sec = sec or _load_yaml(SECRETS_PATH)
     llm = cfg.get("llm") or {}
+    gui = cfg.get("gui") or {}
+    summary_base_urls = gui.get("summary_base_urls") or {}
 
     item = SUMMARY_API_PROVIDERS.get(ui_provider, SUMMARY_API_PROVIDERS["custom"])
-    llm_provider, _env_name, secret_key, default_base_url, base_url_secret_key = item
+    llm_provider, _env_name, secret_key, default_base_url, _base_url_secret_key = item
 
     raw_provider = str(llm.get("provider") or "").strip().lower()
     if raw_provider == llm_provider:
         base_url = str(llm.get("base_url") or "").strip()
     else:
-        base_url = str(sec.get(base_url_secret_key) or "").strip()
+        base_url = str(summary_base_urls.get(ui_provider) or "").strip()
 
     api_key = str(sec.get(secret_key) or "").strip()
     if not base_url:
