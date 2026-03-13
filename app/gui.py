@@ -784,16 +784,19 @@ class PaperBotGUI:
             if not d:
                 self._append_summary_output(f"DOI: {doi}\n状态: 未总结\n")
                 continue
-            self._append_summary_output(
+            status_text = str(d.get("status", "") or "")
+            error_text = str(d.get("error", "") or "")
+            detail = (
                 f"DOI: {doi}\n"
-                f"状态: {d.get('status','')}\n"
+                f"状态: {status_text}\n"
                 f"模型: {d.get('model','')}\n"
                 f"总结时间: {d.get('summarized_at','')}\n"
                 f"方法总结:\n{d.get('method_summary','')}\n\n"
                 f"结果总结:\n{d.get('result_summary','')}\n"
-                f"错误: {d.get('error','')}\n"
-                + "-" * 80
             )
+            if error_text.strip() and status_text.lower() != "ok":
+                detail += f"错误: {error_text}\n"
+            self._append_summary_output(detail + "-" * 80)
 
     def _run_summarize_thread(self, selected_dois: list[str]) -> None:
         parse_result: subprocess.CompletedProcess[str]
