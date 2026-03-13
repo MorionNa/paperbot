@@ -98,7 +98,8 @@ def main():
 
     # ------- 通用 LLM client -------
     print("llm.base_url =", cfg["llm"].get("base_url"))
-    print("DASHSCOPE_API_KEY len =", len(os.getenv("DASHSCOPE_API_KEY", "")))
+    api_key_env = cfg["llm"].get("api_key_env", "OPENAI_API_KEY")
+    print(f"{api_key_env} len =", len(os.getenv(api_key_env, "")))
     llm = make_llm(cfg)
 
     limit = int(cfg["summarize"]["limit_per_run"])
