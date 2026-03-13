@@ -53,6 +53,29 @@ def fetch_unsummarized_by_dois(conn: sqlite3.Connection, dois: list[str], limit:
     ).fetchall()
 
 
+
+
+def diagnose_selected_doi(conn: sqlite3.Connection, doi: str) -> str:
+    parsed = conn.execute(
+        "SELECT length(COALESCE(body_text, '')) FROM parsed_texts WHERE doi = ? LIMIT 1;",
+        (doi,),
+    ).fetchone()
+    summary = conn.execute(
+        "SELECT status FROM summaries WHERE doi = ? LIMIT 1;",
+        (doi,),
+    ).fetchone()
+
+    if summary and str(summary[0] or "").strip().lower() == "ok":
+        return "already summarized (status=ok)"
+    if not parsed:
+        return "no parsed_texts row for this DOI (请先完成解析)"
+    body_len = int(parsed[0] or 0)
+    if body_len <= 1000:
+        return f"body_text too short ({body_len} chars <= 1000)"
+    if summary:
+        return f"existing summary status={summary[0]}"
+    return "not selected by query (unknown filter mismatch)"
+
 def upsert_summary(conn: sqlite3.Connection, doi: str, rec: dict):
     conn.execute(
         """
@@ -115,6 +138,29 @@ def main():
     else:
         rows = fetch_unsummarized(conn, limit=limit)
     print(f"to_summarize: {len(rows)}")
+
+    if selected_dois:
+        candidate_set = {str(r[0] or "").strip() for r in rows}
+        missing_dois = [d for d in selected_dois if d not in candidate_set]
+        if missing_dois:
+            print(f"[summarize] skipped_dois={missing_dois}")
+        for d in missing_dois:
+            reason = diagnose_selected_doi(conn, d)
+            print(f"[summarize] skipped {d}: {reason}")
+            upsert_summary(
+                conn,
+                d,
+                {
+                    "model": cfg["llm"]["model"],
+                    "method_summary": "",
+                    "result_summary": "",
+                    "keywords_json": "[]",
+                    "tags_json": "[]",
+                    "summary_json": "{}",
+                    "status": "failed",
+                    "error": reason,
+                },
+            )
 
     system_chunk = (
         "你是结构工程科研助理。请阅读论文正文的一个片段，输出该片段的摘要（100-200字），"
