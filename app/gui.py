@@ -704,7 +704,7 @@ class PaperBotGUI:
         self.log(f"• API Key 已保存到 {SECRETS_PATH}")
         messagebox.showinfo("成功", "已保存")
 
-    def on_save_summary_config(self) -> bool:
+    def on_save_summary_config(self, show_success: bool = True) -> bool:
         max_tokens = self.summary_max_tokens.get().strip()
         if max_tokens and not max_tokens.isdigit():
             messagebox.showerror("输入错误", "最大输出 token 必须是整数")
@@ -726,7 +726,8 @@ class PaperBotGUI:
             api_key=api_key,
             max_tokens=max_tokens,
         )
-        messagebox.showinfo("成功", "文献总结配置已保存")
+        if show_success:
+            messagebox.showinfo("成功", "文献总结配置已保存")
         return True
 
     def on_summary_provider_change(self) -> None:
@@ -808,7 +809,7 @@ class PaperBotGUI:
             return
 
         # 分析前强制使用当前页面配置，避免“只填了源地址但没保存 API Key”导致无 key 报错
-        if not self.on_save_summary_config():
+        if not self.on_save_summary_config(show_success=False):
             return
 
         self.summary_analyze_btn.config(state=tk.DISABLED)
