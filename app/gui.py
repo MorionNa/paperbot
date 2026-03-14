@@ -888,6 +888,46 @@ class PaperBotGUI:
         print("[GUI][summary] stage=thread_start")
         threading.Thread(target=self._run_summarize_thread, args=(selected_dois,), daemon=True).start()
 
+    def _handle_run_output_line(self, line: str) -> None:
+        line = (line or "").rstrip("\n")
+        if not line:
+            return
+        self.log(line)
+
+        m = re.search(r"\[DL\s+(\d+)/(\d+)\]", line)
+        if m:
+            idx = int(m.group(1))
+            total = max(int(m.group(2)), 1)
+            pct = min(95, int(8 + (idx / total) * 87))
+            self.progress_var.set(pct)
+            self.progress_label.config(text=f"下载进度 {idx}/{total}（{pct}%）")
+            return
+
+        m2 = re.search(r"Done\. New articles:\s*(\d+)", line)
+        if m2:
+            self.progress_var.set(98)
+            self.progress_label.config(text=f"下载进度 完成发现/下载（98%）")
+
+    def _run_daily_with_progress(self) -> subprocess.CompletedProcess[str]:
+        cmd = [sys.executable, str(BASE_DIR / "app" / "run_daily.py")]
+        proc = subprocess.Popen(
+            cmd,
+            cwd=BASE_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        lines: list[str] = []
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            lines.append(line)
+            self.root.after(0, lambda l=line: self._handle_run_output_line(l))
+        returncode = proc.wait()
+        return subprocess.CompletedProcess(args=cmd, returncode=returncode, stdout="".join(lines), stderr="")
+
     def _finish_run(self, result: subprocess.CompletedProcess[str]) -> None:
         self.running = False
         self.start_btn.config(state=tk.NORMAL)
@@ -906,7 +946,7 @@ class PaperBotGUI:
     def _run_task_thread(self, date_from: str, date_until: str) -> None:
         try:
             _set_date_range(date_from=date_from, date_until=date_until)
-            result = _run_daily()
+            result = self._run_daily_with_progress()
         except Exception as e:
             result = subprocess.CompletedProcess(args=["run_daily.py"], returncode=1, stdout="", stderr=str(e))
         self.root.after(0, lambda: self._finish_run(result))
@@ -924,8 +964,8 @@ class PaperBotGUI:
         self.start_btn.config(state=tk.DISABLED)
         self.clear_logs()
         self.log(f"• 任务启动：{date_from} ~ {date_until}")
-        self.progress_var.set(35)
-        self.progress_label.config(text="总进度 35%")
+        self.progress_var.set(5)
+        self.progress_label.config(text="下载进度 0/0（5%）")
         threading.Thread(target=self._run_task_thread, args=(date_from, date_until), daemon=True).start()
 
 
