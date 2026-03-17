@@ -177,6 +177,8 @@ def main():
         "你是结构工程科研助理。请基于论文标题、摘要与全文，输出结构化总结。"
         "用中文输出，必要的专业术语保留英文缩写（如 PINN/GNN）。"
         "不要编造不存在的数值或结论。"
+        "必须输出严格合法的 JSON，不能输出 markdown、代码块或额外解释。"
+        "JSON 字符串中的反斜杠必须合法转义，禁止出现非法转义（如 \_、\(、\\x 等）。"
     )
 
     for i, (doi, title, abstract, body_text, journal) in enumerate(rows, 1):
@@ -192,6 +194,8 @@ def main():
                 f"Abstract: {abstract or ''}\n\n"
                 f"Full text:\n{body}\n\n"
                 "请按 JSON Schema 输出：method_summary / result_summary / keywords / tags / notes。"
+                "仅输出单个合法 JSON 对象；不要输出任何额外文本。"
+                "注意 JSON 转义合法性，遇到反斜杠请使用双反斜杠。"
             )
 
             print("  -> full-text json summarize start")
