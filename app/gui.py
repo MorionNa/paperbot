@@ -306,6 +306,8 @@ class PaperBotGUI:
         self.root.minsize(1160, 720)
 
         self.running = False
+        self.download_total_expected = 0
+        self.download_success_count = 0
         self.active_page = "download"
         self._build_styles()
         self._build_layout()
@@ -594,6 +596,8 @@ class PaperBotGUI:
         self.output_box.delete("1.0", tk.END)
         self.progress_var.set(0)
         self.progress_label.config(text="总进度 0%")
+        self.download_total_expected = 0
+        self.download_success_count = 0
 
     def refresh_journal_table(self) -> None:
         for item in self.journal_tree.get_children():
@@ -894,19 +898,32 @@ class PaperBotGUI:
             return
         self.log(line)
 
-        m = re.search(r"\[DL\s+(\d+)/(\d+)\]", line)
-        if m:
-            idx = int(m.group(1))
-            total = max(int(m.group(2)), 1)
-            pct = min(95, int(8 + (idx / total) * 87))
+        m_total = re.search(r"\[DL\s+(\d+)/(\d+)\]", line)
+        if m_total:
+            self.download_total_expected = max(int(m_total.group(2)), 1)
+
+        # 本地实际下载成功（不计 already ok）
+        if "already ok" not in line and re.search(r"->\s+(?:springer\s+|ieee\s+)?(ok|success|downloaded)\b", line):
+            self.download_success_count += 1
+
+        # Wiley 批量下载汇总（ok=x/y）
+        m_wiley = re.search(r"\[Wiley tdm-client\]\s+ok=(\d+)/(\d+)", line)
+        if m_wiley:
+            self.download_success_count += int(m_wiley.group(1))
+
+        total = self.download_total_expected
+        success = self.download_success_count
+        if total > 0:
+            # 以“成功下载数/总待下载数”作为真实进度
+            pct = min(95, int(8 + (min(success, total) / total) * 87))
             self.progress_var.set(pct)
-            self.progress_label.config(text=f"下载进度 {idx}/{total}（{pct}%）")
+            self.progress_label.config(text=f"下载进度 成功 {success}/{total}（{pct}%）")
             return
 
-        m2 = re.search(r"Done\. New articles:\s*(\d+)", line)
-        if m2:
+        m_done = re.search(r"Done\. New articles:\s*(\d+)", line)
+        if m_done:
             self.progress_var.set(98)
-            self.progress_label.config(text=f"下载进度 完成发现/下载（98%）")
+            self.progress_label.config(text="下载进度 完成发现/下载（98%）")
 
     def _run_daily_with_progress(self) -> subprocess.CompletedProcess[str]:
         cmd = [sys.executable, str(BASE_DIR / "app" / "run_daily.py")]
@@ -964,8 +981,10 @@ class PaperBotGUI:
         self.start_btn.config(state=tk.DISABLED)
         self.clear_logs()
         self.log(f"• 任务启动：{date_from} ~ {date_until}")
+        self.download_total_expected = 0
+        self.download_success_count = 0
         self.progress_var.set(5)
-        self.progress_label.config(text="下载进度 0/0（5%）")
+        self.progress_label.config(text="下载进度 成功 0/0（5%）")
         threading.Thread(target=self._run_task_thread, args=(date_from, date_until), daemon=True).start()
 
 
