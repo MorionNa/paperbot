@@ -468,17 +468,11 @@ class PaperBotGUI:
         ttk.Button(action_bar, text="查看总结内容", command=self.on_view_selected_summary).pack(side=tk.LEFT, padx=8)
         ttk.Button(action_bar, text="刷新文献", command=self.refresh_downloaded_articles_table).pack(side=tk.LEFT, padx=8)
 
-        ttk.Label(action_bar, text="时间排序").pack(side=tk.LEFT, padx=(16, 6))
-        self.download_sort_var = tk.StringVar(value="降序")
-        sort_box = ttk.Combobox(action_bar, textvariable=self.download_sort_var, values=["降序", "升序"], state="readonly", width=8)
-        sort_box.pack(side=tk.LEFT)
-        sort_box.bind("<<ComboboxSelected>>", lambda _e: self._render_downloaded_rows())
-
-        ttk.Label(action_bar, text="关键词筛选").pack(side=tk.LEFT, padx=(12, 6))
-        self.download_keyword_var = tk.StringVar(value="全部")
-        self.download_keyword_box = ttk.Combobox(action_bar, textvariable=self.download_keyword_var, values=["全部"], state="readonly", width=18)
-        self.download_keyword_box.pack(side=tk.LEFT)
-        self.download_keyword_box.bind("<<ComboboxSelected>>", lambda _e: self._render_downloaded_rows())
+        ttk.Label(action_bar, text="关键词筛选（可多选）").pack(side=tk.LEFT, padx=(16, 6))
+        self.download_keyword_listbox = tk.Listbox(action_bar, selectmode=tk.MULTIPLE, height=4, exportselection=False)
+        self.download_keyword_listbox.pack(side=tk.LEFT)
+        self.download_keyword_listbox.bind("<<ListboxSelect>>", lambda _e: self._render_downloaded_rows())
+        ttk.Button(action_bar, text="清空关键词筛选", command=self.clear_keyword_filter).pack(side=tk.LEFT, padx=8)
 
         cfg = ttk.LabelFrame(parent, text="大模型配置", padding=14, style="Card.TLabelframe")
         cfg.pack(fill=tk.X, pady=(14, 0))
@@ -669,14 +663,14 @@ class PaperBotGUI:
             self.download_rows_cache = []
 
         kws = sorted({kw for row in self.download_rows_cache for kw in _split_keywords(row[6])})
-        current = self.download_keyword_var.get().strip() if hasattr(self, "download_keyword_var") else "全部"
-        values = ["全部"] + kws
-        if hasattr(self, "download_keyword_box"):
-            self.download_keyword_box.configure(values=values)
-            if current in values:
-                self.download_keyword_var.set(current)
-            else:
-                self.download_keyword_var.set("全部")
+        if hasattr(self, "download_keyword_listbox"):
+            selected_before = set(self.get_selected_keywords())
+            self.download_keyword_listbox.delete(0, tk.END)
+            for kw in kws:
+                self.download_keyword_listbox.insert(tk.END, kw)
+            for i, kw in enumerate(kws):
+                if kw in selected_before:
+                    self.download_keyword_listbox.selection_set(i)
 
         self._render_downloaded_rows()
 
@@ -685,19 +679,27 @@ class PaperBotGUI:
             self.downloaded_tree.delete(item)
 
         rows = list(self.download_rows_cache)
-        desc = (self.download_sort_var.get().strip() != "升序") if hasattr(self, "download_sort_var") else True
-        rows.sort(key=lambda r: str(r[0] or ""), reverse=desc)
+        rows.sort(key=lambda r: str(r[0] or ""), reverse=self.download_date_sort_desc)
 
-        kw_filter = self.download_keyword_var.get().strip() if hasattr(self, "download_keyword_var") else "全部"
-        if kw_filter and kw_filter != "全部":
-            rows = [r for r in rows if kw_filter in _split_keywords(r[6])]
+        selected_keywords = set(self.get_selected_keywords())
+        if selected_keywords:
+            rows = [r for r in rows if selected_keywords.intersection(set(_split_keywords(r[6])))]
 
         for row in rows:
             self.downloaded_tree.insert("", tk.END, values=row)
 
+    def get_selected_keywords(self) -> list[str]:
+        if not hasattr(self, "download_keyword_listbox"):
+            return []
+        return [self.download_keyword_listbox.get(i) for i in self.download_keyword_listbox.curselection()]
+
+    def clear_keyword_filter(self) -> None:
+        if hasattr(self, "download_keyword_listbox"):
+            self.download_keyword_listbox.selection_clear(0, tk.END)
+        self._render_downloaded_rows()
+
     def sort_downloaded_by_date(self) -> None:
-        if hasattr(self, "download_sort_var"):
-            self.download_sort_var.set("升序" if self.download_sort_var.get() == "降序" else "降序")
+        self.download_date_sort_desc = not self.download_date_sort_desc
         self._render_downloaded_rows()
 
     def on_view_selected_summary(self) -> None:
