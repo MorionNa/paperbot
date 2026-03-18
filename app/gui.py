@@ -229,7 +229,7 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                   COALESCE(a.journal, ''),
                   f.doi,
                   COALESCE(f.status, ''),
-                  CASE WHEN lower(COALESCE(s.status, ''))='ok' THEN '已总结' ELSE '未总结' END,
+                  CASE WHEN lower(COALESCE(s.status, ''))='ok' THEN '查看' ELSE '未总结' END,
                   COALESCE(s.keywords_json, '')
                 FROM fulltexts f
                 LEFT JOIN articles a ON a.doi = f.doi
@@ -465,7 +465,6 @@ class PaperBotGUI:
         action_bar.pack(fill=tk.X, pady=(8, 0))
         self.summary_analyze_btn = ttk.Button(action_bar, text="智能分析", style="Primary.TButton", command=self.on_analyze_selected)
         self.summary_analyze_btn.pack(side=tk.LEFT)
-        ttk.Button(action_bar, text="查看总结内容", command=self.on_view_selected_summary).pack(side=tk.LEFT, padx=8)
         ttk.Button(action_bar, text="刷新文献", command=self.refresh_downloaded_articles_table).pack(side=tk.LEFT, padx=8)
 
         ttk.Label(action_bar, text="关键词筛选（可多选）").pack(side=tk.LEFT, padx=(16, 6))
@@ -473,6 +472,7 @@ class PaperBotGUI:
         self.download_keyword_listbox.pack(side=tk.LEFT)
         self.download_keyword_listbox.bind("<<ListboxSelect>>", lambda _e: self._render_downloaded_rows())
         ttk.Button(action_bar, text="清空关键词筛选", command=self.clear_keyword_filter).pack(side=tk.LEFT, padx=8)
+        self.downloaded_tree.bind("<ButtonRelease-1>", self.on_downloaded_tree_click)
 
         cfg = ttk.LabelFrame(parent, text="大模型配置", padding=14, style="Card.TLabelframe")
         cfg.pack(fill=tk.X, pady=(14, 0))
@@ -718,6 +718,26 @@ class PaperBotGUI:
             messagebox.showwarning("提示", "选中的记录没有 DOI")
             return
         self._render_summary_for_selected(selected_dois)
+
+    def on_downloaded_tree_click(self, event: tk.Event) -> None:
+        region = self.downloaded_tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+        column = self.downloaded_tree.identify_column(event.x)
+        item = self.downloaded_tree.identify_row(event.y)
+        if column != "#6" or not item:
+            return
+
+        vals = self.downloaded_tree.item(item, "values")
+        if len(vals) < 6 or str(vals[5]).strip() != "查看":
+            return
+
+        doi = str(vals[3] if len(vals) >= 4 else "").strip()
+        if not doi:
+            messagebox.showwarning("提示", "该记录没有 DOI，无法查看总结")
+            return
+        self.downloaded_tree.selection_set(item)
+        self._render_summary_for_selected([doi])
 
     def on_add_journal(self) -> None:
         name = self.journal_name.get().strip()
