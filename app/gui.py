@@ -60,6 +60,16 @@ def _keywords_json_to_text(value: str) -> str:
         return raw
 
 
+
+
+def _split_keywords(keyword_text: str) -> list[str]:
+    raw = (keyword_text or "").strip()
+    if not raw:
+        return []
+    parts = [x.strip() for x in raw.replace("、", ";").split(";")]
+    return [x for x in parts if x]
+
+
 def _append_journal(name: str, publisher: str, issn_print: str, issn_online: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     journals = cfg.setdefault("journals", [])
@@ -328,6 +338,7 @@ class PaperBotGUI:
         self.download_total_expected = 0
         self.download_success_count = 0
         self.download_date_sort_desc = True
+        self.download_rows_cache: list[tuple[str, str, str, str, str, str, str]] = []
         self.active_page = "download"
         self._build_styles()
         self._build_layout()
@@ -456,6 +467,18 @@ class PaperBotGUI:
         self.summary_analyze_btn.pack(side=tk.LEFT)
         ttk.Button(action_bar, text="查看总结内容", command=self.on_view_selected_summary).pack(side=tk.LEFT, padx=8)
         ttk.Button(action_bar, text="刷新文献", command=self.refresh_downloaded_articles_table).pack(side=tk.LEFT, padx=8)
+
+        ttk.Label(action_bar, text="时间排序").pack(side=tk.LEFT, padx=(16, 6))
+        self.download_sort_var = tk.StringVar(value="降序")
+        sort_box = ttk.Combobox(action_bar, textvariable=self.download_sort_var, values=["降序", "升序"], state="readonly", width=8)
+        sort_box.pack(side=tk.LEFT)
+        sort_box.bind("<<ComboboxSelected>>", lambda _e: self._render_downloaded_rows())
+
+        ttk.Label(action_bar, text="关键词筛选").pack(side=tk.LEFT, padx=(12, 6))
+        self.download_keyword_var = tk.StringVar(value="全部")
+        self.download_keyword_box = ttk.Combobox(action_bar, textvariable=self.download_keyword_var, values=["全部"], state="readonly", width=18)
+        self.download_keyword_box.pack(side=tk.LEFT)
+        self.download_keyword_box.bind("<<ComboboxSelected>>", lambda _e: self._render_downloaded_rows())
 
         cfg = ttk.LabelFrame(parent, text="大模型配置", padding=14, style="Card.TLabelframe")
         cfg.pack(fill=tk.X, pady=(14, 0))
@@ -639,21 +662,43 @@ class PaperBotGUI:
             self.journal_tree.insert("", tk.END, iid=str(idx), values=(j.get("name", ""), (j.get("publisher") or "").capitalize(), issn))
 
     def refresh_downloaded_articles_table(self) -> None:
-        for item in self.downloaded_tree.get_children():
-            self.downloaded_tree.delete(item)
         try:
-            rows = _load_downloaded_articles()
+            self.download_rows_cache = _load_downloaded_articles()
         except Exception as e:
             self.log(f"• 读取文献列表失败：{e}")
-            rows = []
+            self.download_rows_cache = []
 
-        rows.sort(key=lambda r: str(r[0] or ""), reverse=self.download_date_sort_desc)
+        kws = sorted({kw for row in self.download_rows_cache for kw in _split_keywords(row[6])})
+        current = self.download_keyword_var.get().strip() if hasattr(self, "download_keyword_var") else "全部"
+        values = ["全部"] + kws
+        if hasattr(self, "download_keyword_box"):
+            self.download_keyword_box.configure(values=values)
+            if current in values:
+                self.download_keyword_var.set(current)
+            else:
+                self.download_keyword_var.set("全部")
+
+        self._render_downloaded_rows()
+
+    def _render_downloaded_rows(self) -> None:
+        for item in self.downloaded_tree.get_children():
+            self.downloaded_tree.delete(item)
+
+        rows = list(self.download_rows_cache)
+        desc = (self.download_sort_var.get().strip() != "升序") if hasattr(self, "download_sort_var") else True
+        rows.sort(key=lambda r: str(r[0] or ""), reverse=desc)
+
+        kw_filter = self.download_keyword_var.get().strip() if hasattr(self, "download_keyword_var") else "全部"
+        if kw_filter and kw_filter != "全部":
+            rows = [r for r in rows if kw_filter in _split_keywords(r[6])]
+
         for row in rows:
             self.downloaded_tree.insert("", tk.END, values=row)
 
     def sort_downloaded_by_date(self) -> None:
-        self.download_date_sort_desc = not self.download_date_sort_desc
-        self.refresh_downloaded_articles_table()
+        if hasattr(self, "download_sort_var"):
+            self.download_sort_var.set("升序" if self.download_sort_var.get() == "降序" else "降序")
+        self._render_downloaded_rows()
 
     def on_view_selected_summary(self) -> None:
         selected = self.downloaded_tree.selection()
