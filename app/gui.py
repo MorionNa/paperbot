@@ -442,9 +442,11 @@ class PaperBotGUI:
     def _build_summary_page(self, parent: ttk.Frame) -> None:
         top = ttk.LabelFrame(parent, text="已下载文献", padding=14, style="Card.TLabelframe")
         top.pack(fill=tk.X, expand=False)
+        table_wrap = ttk.Frame(top)
+        table_wrap.pack(fill=tk.BOTH, expand=True)
 
         cols = ("published", "title", "journal", "doi", "status", "summary_status", "keywords")
-        self.downloaded_tree = ttk.Treeview(top, columns=cols, show="headings", height=8, selectmode="extended")
+        self.downloaded_tree = ttk.Treeview(table_wrap, columns=cols, show="headings", height=8, selectmode="extended")
         self.downloaded_tree.heading("published", text="日期", command=lambda: self.sort_downloaded_by_date())
         self.downloaded_tree.heading("title", text="标题")
         self.downloaded_tree.heading("journal", text="期刊")
@@ -460,17 +462,15 @@ class PaperBotGUI:
         self.downloaded_tree.column("summary_status", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("keywords", width=260)
 
-        table_wrap = ttk.Frame(top)
-        table_wrap.pack(fill=tk.BOTH, expand=True)
         ybar = ttk.Scrollbar(table_wrap, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
         xbar = ttk.Scrollbar(table_wrap, orient=tk.HORIZONTAL, command=self.downloaded_tree.xview)
         self.downloaded_tree.configure(
             yscrollcommand=lambda first, last: self._on_tree_scrolled(ybar, first, last),
             xscrollcommand=lambda first, last: self._on_tree_scrolled(xbar, first, last),
         )
-        self.downloaded_tree.grid(in_=table_wrap, row=0, column=0, sticky="nsew")
-        ybar.grid(in_=table_wrap, row=0, column=1, sticky="ns")
-        xbar.grid(in_=table_wrap, row=1, column=0, sticky="ew")
+        self.downloaded_tree.grid(row=0, column=0, sticky="nsew")
+        ybar.grid(row=0, column=1, sticky="ns")
+        xbar.grid(row=1, column=0, sticky="ew")
         table_wrap.rowconfigure(0, weight=1)
         table_wrap.columnconfigure(0, weight=1)
 
