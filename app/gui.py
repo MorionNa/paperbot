@@ -453,6 +453,7 @@ class PaperBotGUI:
         self.downloaded_tree.column("status", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("summary_status", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("keywords", width=260)
+        self.downloaded_tree.tag_configure("summary_link", foreground="#2563eb", font=("Arial", 10, "underline"))
 
         ybar = ttk.Scrollbar(top, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
         xbar = ttk.Scrollbar(top, orient=tk.HORIZONTAL, command=self.downloaded_tree.xview)
@@ -473,6 +474,8 @@ class PaperBotGUI:
         self.download_keyword_listbox.bind("<<ListboxSelect>>", lambda _e: self._render_downloaded_rows())
         ttk.Button(action_bar, text="清空关键词筛选", command=self.clear_keyword_filter).pack(side=tk.LEFT, padx=8)
         self.downloaded_tree.bind("<ButtonRelease-1>", self.on_downloaded_tree_click)
+        self.downloaded_tree.bind("<Motion>", self.on_downloaded_tree_motion)
+        self.downloaded_tree.bind("<Leave>", self.on_downloaded_tree_leave)
 
         cfg = ttk.LabelFrame(parent, text="大模型配置", padding=14, style="Card.TLabelframe")
         cfg.pack(fill=tk.X, pady=(14, 0))
@@ -686,7 +689,8 @@ class PaperBotGUI:
             rows = [r for r in rows if selected_keywords.intersection(set(_split_keywords(r[6])))]
 
         for row in rows:
-            self.downloaded_tree.insert("", tk.END, values=row)
+            tags: tuple[str, ...] = ("summary_link",) if str(row[5]).strip() == "查看" else ()
+            self.downloaded_tree.insert("", tk.END, values=row, tags=tags)
 
     def get_selected_keywords(self) -> list[str]:
         if not hasattr(self, "download_keyword_listbox"):
@@ -738,6 +742,25 @@ class PaperBotGUI:
             return
         self.downloaded_tree.selection_set(item)
         self._render_summary_for_selected([doi])
+
+    def on_downloaded_tree_motion(self, event: tk.Event) -> None:
+        region = self.downloaded_tree.identify("region", event.x, event.y)
+        if region != "cell":
+            self.downloaded_tree.configure(cursor="")
+            return
+        column = self.downloaded_tree.identify_column(event.x)
+        item = self.downloaded_tree.identify_row(event.y)
+        if column != "#6" or not item:
+            self.downloaded_tree.configure(cursor="")
+            return
+        vals = self.downloaded_tree.item(item, "values")
+        if len(vals) >= 6 and str(vals[5]).strip() == "查看":
+            self.downloaded_tree.configure(cursor="hand2")
+            return
+        self.downloaded_tree.configure(cursor="")
+
+    def on_downloaded_tree_leave(self, _event: tk.Event) -> None:
+        self.downloaded_tree.configure(cursor="")
 
     def on_add_journal(self) -> None:
         name = self.journal_name.get().strip()
