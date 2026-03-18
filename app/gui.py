@@ -11,6 +11,7 @@ import webbrowser
 from datetime import date, timedelta
 from pathlib import Path
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
 import yaml
@@ -339,6 +340,8 @@ class PaperBotGUI:
         self.download_success_count = 0
         self.download_date_sort_desc = True
         self.download_rows_cache: list[tuple[str, str, str, str, str, str, str]] = []
+        self.summary_link_labels: dict[str, tk.Label] = {}
+        self.summary_link_font = tkfont.Font(family="Arial", size=10, underline=True)
         self.active_page = "download"
         self._build_styles()
         self._build_layout()
@@ -456,7 +459,10 @@ class PaperBotGUI:
 
         ybar = ttk.Scrollbar(top, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
         xbar = ttk.Scrollbar(top, orient=tk.HORIZONTAL, command=self.downloaded_tree.xview)
-        self.downloaded_tree.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+        self.downloaded_tree.configure(
+            yscrollcommand=lambda first, last: self._on_tree_scrolled(ybar, first, last),
+            xscrollcommand=lambda first, last: self._on_tree_scrolled(xbar, first, last),
+        )
         self.downloaded_tree.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         xbar.pack(side=tk.BOTTOM, fill=tk.X)
         ybar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -475,6 +481,7 @@ class PaperBotGUI:
         self.downloaded_tree.bind("<ButtonRelease-1>", self.on_downloaded_tree_click)
         self.downloaded_tree.bind("<Motion>", self.on_downloaded_tree_motion)
         self.downloaded_tree.bind("<Leave>", self.on_downloaded_tree_leave)
+        self.downloaded_tree.bind("<Configure>", lambda _e: self.root.after_idle(self._refresh_summary_link_labels))
 
         cfg = ttk.LabelFrame(parent, text="大模型配置", padding=14, style="Card.TLabelframe")
         cfg.pack(fill=tk.X, pady=(14, 0))
@@ -689,6 +696,52 @@ class PaperBotGUI:
 
         for row in rows:
             self.downloaded_tree.insert("", tk.END, values=row)
+        self._refresh_summary_link_labels()
+
+    def _on_tree_scrolled(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
+        scrollbar.set(first, last)
+        self.root.after_idle(self._refresh_summary_link_labels)
+
+    def _on_summary_link_click(self, doi: str, item_id: str) -> None:
+        if not doi:
+            messagebox.showwarning("提示", "该记录没有 DOI，无法查看总结")
+            return
+        self.downloaded_tree.selection_set(item_id)
+        self._render_summary_for_selected([doi])
+
+    def _refresh_summary_link_labels(self) -> None:
+        if not hasattr(self, "downloaded_tree"):
+            return
+        active_items: set[str] = set()
+        for item in self.downloaded_tree.get_children():
+            vals = self.downloaded_tree.item(item, "values")
+            if len(vals) < 6 or str(vals[5]).strip() != "查看":
+                continue
+            bbox = self.downloaded_tree.bbox(item, "summary_status")
+            if not bbox:
+                continue
+            x, y, w, h = bbox
+            doi = str(vals[3] if len(vals) >= 4 else "").strip()
+            active_items.add(item)
+            lbl = self.summary_link_labels.get(item)
+            if lbl is None:
+                lbl = tk.Label(
+                    self.downloaded_tree,
+                    text="查看",
+                    fg="#2563eb",
+                    bg="#ffffff",
+                    cursor="hand2",
+                    font=self.summary_link_font,
+                )
+                self.summary_link_labels[item] = lbl
+            else:
+                lbl.configure(bg="#ffffff")
+            lbl.bind("<Button-1>", lambda _e, d=doi, iid=item: self._on_summary_link_click(d, iid))
+            lbl.place(x=x + 1, y=y + 1, width=max(w - 2, 1), height=max(h - 2, 1))
+        for item_id in list(self.summary_link_labels.keys()):
+            if item_id not in active_items:
+                self.summary_link_labels[item_id].destroy()
+                self.summary_link_labels.pop(item_id, None)
 
     def get_selected_keywords(self) -> list[str]:
         if not hasattr(self, "download_keyword_listbox"):
