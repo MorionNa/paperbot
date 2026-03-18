@@ -494,6 +494,16 @@ def main():
         wiley_pending = wiley_pending[:wiley_limit]
         download_wiley_via_tdm_client(conn, base_dir, cfg, wiley_pending, all_new)
 
+    # 仅保留下载成功的论文到 papers.db（本轮新发现条目）
+    successful_new: List[dict] = [a for a in all_new if (a.get("fulltext_status") or "").lower() == "ok"]
+    failed_new_dois = [(a.get("doi") or "").strip() for a in all_new if (a.get("fulltext_status") or "").lower() != "ok" and (a.get("doi") or "").strip()]
+    if failed_new_dois:
+        conn.executemany("DELETE FROM fulltexts WHERE doi = ?;", [(d,) for d in failed_new_dois])
+        conn.executemany("DELETE FROM articles WHERE doi = ?;", [(d,) for d in failed_new_dois])
+        conn.commit()
+        print(f"[DB CLEANUP] removed non-downloaded records: {len(failed_new_dois)}", flush=True)
+    all_new = successful_new
+
     out_path = _dated_output_path(base_dir, cfg["pipeline"])
     export_new_articles_with_summaries(conn, all_new, out_path)
 

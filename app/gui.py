@@ -466,9 +466,9 @@ class PaperBotGUI:
             yscrollcommand=lambda first, last: self._on_tree_scrolled(ybar, first, last),
             xscrollcommand=lambda first, last: self._on_tree_scrolled(xbar, first, last),
         )
-        self.downloaded_tree.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        xbar.pack(side=tk.BOTTOM, fill=tk.X)
         ybar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.downloaded_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        xbar.pack(side=tk.BOTTOM, fill=tk.X)
 
         action_bar = ttk.Frame(parent)
         action_bar.pack(fill=tk.X, pady=(8, 0))
