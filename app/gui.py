@@ -340,6 +340,9 @@ class PaperBotGUI:
         self.download_success_count = 0
         self.download_date_sort_desc = True
         self.download_rows_cache: list[tuple[str, str, str, str, str, str, str]] = []
+        self.download_keyword_all: list[str] = []
+        self.download_keyword_selected: set[str] = set()
+        self.keyword_search_var = tk.StringVar()
         self.summary_link_labels: dict[str, tk.Label] = {}
         self.summary_link_font = tkfont.Font(family="Arial", size=10, underline=True)
         self.active_page = "download"
@@ -474,9 +477,13 @@ class PaperBotGUI:
         ttk.Button(action_bar, text="刷新文献", command=self.refresh_downloaded_articles_table).pack(side=tk.LEFT, padx=8)
 
         ttk.Label(action_bar, text="关键词筛选（可多选）").pack(side=tk.LEFT, padx=(16, 6))
+        ttk.Label(action_bar, text="检索").pack(side=tk.LEFT, padx=(8, 4))
+        keyword_search_entry = ttk.Entry(action_bar, textvariable=self.keyword_search_var, width=18)
+        keyword_search_entry.pack(side=tk.LEFT)
+        keyword_search_entry.bind("<KeyRelease>", lambda _e: self.on_keyword_search_change())
         self.download_keyword_listbox = tk.Listbox(action_bar, selectmode=tk.MULTIPLE, height=4, exportselection=False)
         self.download_keyword_listbox.pack(side=tk.LEFT)
-        self.download_keyword_listbox.bind("<<ListboxSelect>>", lambda _e: self._render_downloaded_rows())
+        self.download_keyword_listbox.bind("<<ListboxSelect>>", self.on_keyword_listbox_select)
         ttk.Button(action_bar, text="清空关键词筛选", command=self.clear_keyword_filter).pack(side=tk.LEFT, padx=8)
         self.downloaded_tree.bind("<ButtonRelease-1>", self.on_downloaded_tree_click)
         self.downloaded_tree.bind("<Motion>", self.on_downloaded_tree_motion)
@@ -672,14 +679,10 @@ class PaperBotGUI:
             self.download_rows_cache = []
 
         kws = sorted({kw for row in self.download_rows_cache for kw in _split_keywords(row[6])})
+        self.download_keyword_all = kws
+        self.download_keyword_selected = {kw for kw in self.download_keyword_selected if kw in set(kws)}
         if hasattr(self, "download_keyword_listbox"):
-            selected_before = set(self.get_selected_keywords())
-            self.download_keyword_listbox.delete(0, tk.END)
-            for kw in kws:
-                self.download_keyword_listbox.insert(tk.END, kw)
-            for i, kw in enumerate(kws):
-                if kw in selected_before:
-                    self.download_keyword_listbox.selection_set(i)
+            self._render_keyword_listbox()
 
         self._render_downloaded_rows()
 
@@ -701,6 +704,33 @@ class PaperBotGUI:
     def _on_tree_scrolled(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
         scrollbar.set(first, last)
         self.root.after_idle(self._refresh_summary_link_labels)
+
+    def _render_keyword_listbox(self) -> None:
+        if not hasattr(self, "download_keyword_listbox"):
+            return
+        query = self.keyword_search_var.get().strip().lower()
+        if query:
+            shown = [kw for kw in self.download_keyword_all if query in kw.lower()]
+        else:
+            shown = list(self.download_keyword_all)
+        self.download_keyword_listbox.delete(0, tk.END)
+        for kw in shown:
+            self.download_keyword_listbox.insert(tk.END, kw)
+        for i, kw in enumerate(shown):
+            if kw in self.download_keyword_selected:
+                self.download_keyword_listbox.selection_set(i)
+
+    def on_keyword_search_change(self) -> None:
+        self._render_keyword_listbox()
+
+    def on_keyword_listbox_select(self, _event: tk.Event) -> None:
+        visible_keywords = [self.download_keyword_listbox.get(i) for i in range(self.download_keyword_listbox.size())]
+        visible_selected = {self.download_keyword_listbox.get(i) for i in self.download_keyword_listbox.curselection()}
+        for kw in visible_keywords:
+            if kw in self.download_keyword_selected and kw not in visible_selected:
+                self.download_keyword_selected.remove(kw)
+        self.download_keyword_selected.update(visible_selected)
+        self._render_downloaded_rows()
 
     def _on_summary_link_click(self, doi: str, item_id: str) -> None:
         if not doi:
@@ -744,13 +774,14 @@ class PaperBotGUI:
                 self.summary_link_labels.pop(item_id, None)
 
     def get_selected_keywords(self) -> list[str]:
-        if not hasattr(self, "download_keyword_listbox"):
-            return []
-        return [self.download_keyword_listbox.get(i) for i in self.download_keyword_listbox.curselection()]
+        return sorted(self.download_keyword_selected)
 
     def clear_keyword_filter(self) -> None:
+        self.download_keyword_selected.clear()
+        self.keyword_search_var.set("")
         if hasattr(self, "download_keyword_listbox"):
             self.download_keyword_listbox.selection_clear(0, tk.END)
+            self._render_keyword_listbox()
         self._render_downloaded_rows()
 
     def sort_downloaded_by_date(self) -> None:
