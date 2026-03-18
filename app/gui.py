@@ -453,7 +453,6 @@ class PaperBotGUI:
         self.downloaded_tree.column("status", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("summary_status", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("keywords", width=260)
-        self.downloaded_tree.tag_configure("summary_link", foreground="#2563eb", font=("Arial", 10, "underline"))
 
         ybar = ttk.Scrollbar(top, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
         xbar = ttk.Scrollbar(top, orient=tk.HORIZONTAL, command=self.downloaded_tree.xview)
@@ -689,8 +688,7 @@ class PaperBotGUI:
             rows = [r for r in rows if selected_keywords.intersection(set(_split_keywords(r[6])))]
 
         for row in rows:
-            tags: tuple[str, ...] = ("summary_link",) if str(row[5]).strip() == "查看" else ()
-            self.downloaded_tree.insert("", tk.END, values=row, tags=tags)
+            self.downloaded_tree.insert("", tk.END, values=row)
 
     def get_selected_keywords(self) -> list[str]:
         if not hasattr(self, "download_keyword_listbox"):
