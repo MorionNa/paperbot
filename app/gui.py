@@ -189,7 +189,7 @@ def _get_db_path_from_cfg() -> Path:
     return (BASE_DIR / "data" / "papers.db").resolve()
 
 
-def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str, str]]:
+def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str, str, str]]:
     db_path = _get_db_path_from_cfg()
     if not db_path.exists():
         return []
@@ -204,9 +204,11 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                   COALESCE(a.title, ''),
                   COALESCE(a.journal, ''),
                   f.doi,
-                  COALESCE(f.status, '')
+                  COALESCE(f.status, ''),
+                  CASE WHEN lower(COALESCE(s.status, ''))='ok' THEN '已总结' ELSE '未总结' END
                 FROM fulltexts f
                 LEFT JOIN articles a ON a.doi = f.doi
+                LEFT JOIN summaries s ON s.doi = f.doi
                 WHERE lower(COALESCE(f.status, '')) IN ('ok', 'success', 'downloaded')
                 ORDER BY COALESCE(f.downloaded_at, '') DESC, f.rowid DESC
                 LIMIT ?
@@ -222,7 +224,8 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                   COALESCE(a.title, ''),
                   COALESCE(a.journal, ''),
                   f.doi,
-                  COALESCE(f.status, '')
+                  COALESCE(f.status, ''),
+                  '未总结'
                 FROM fulltexts f
                 LEFT JOIN articles a ON a.doi = f.doi
                 ORDER BY COALESCE(f.downloaded_at, '') DESC
@@ -230,7 +233,7 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                 """,
                 (limit,),
             ).fetchall()
-        return [(str(r[0] or ""), str(r[1] or ""), str(r[2] or ""), str(r[3] or ""), str(r[4] or "")) for r in rows]
+        return [(str(r[0] or ""), str(r[1] or ""), str(r[2] or ""), str(r[3] or ""), str(r[4] or ""), str(r[5] or "")) for r in rows]
     finally:
         conn.close()
 
@@ -308,6 +311,7 @@ class PaperBotGUI:
         self.running = False
         self.download_total_expected = 0
         self.download_success_count = 0
+        self.download_date_sort_desc = True
         self.active_page = "download"
         self._build_styles()
         self._build_layout()
@@ -406,18 +410,20 @@ class PaperBotGUI:
         top = ttk.LabelFrame(parent, text="已下载文献", padding=14, style="Card.TLabelframe")
         top.pack(fill=tk.X, expand=False)
 
-        cols = ("published", "title", "journal", "doi", "status")
+        cols = ("published", "title", "journal", "doi", "status", "summary_status")
         self.downloaded_tree = ttk.Treeview(top, columns=cols, show="headings", height=8, selectmode="extended")
-        self.downloaded_tree.heading("published", text="日期")
+        self.downloaded_tree.heading("published", text="日期", command=lambda: self.sort_downloaded_by_date())
         self.downloaded_tree.heading("title", text="标题")
         self.downloaded_tree.heading("journal", text="期刊")
         self.downloaded_tree.heading("doi", text="DOI")
         self.downloaded_tree.heading("status", text="下载状态")
+        self.downloaded_tree.heading("summary_status", text="是否已总结")
         self.downloaded_tree.column("published", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("title", width=330)
         self.downloaded_tree.column("journal", width=180)
         self.downloaded_tree.column("doi", width=200)
         self.downloaded_tree.column("status", width=90, anchor=tk.CENTER)
+        self.downloaded_tree.column("summary_status", width=90, anchor=tk.CENTER)
 
         ybar = ttk.Scrollbar(top, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
         self.downloaded_tree.configure(yscrollcommand=ybar.set)
@@ -428,6 +434,7 @@ class PaperBotGUI:
         action_bar.pack(fill=tk.X, pady=(8, 0))
         self.summary_analyze_btn = ttk.Button(action_bar, text="智能分析", style="Primary.TButton", command=self.on_analyze_selected)
         self.summary_analyze_btn.pack(side=tk.LEFT)
+        ttk.Button(action_bar, text="查看总结内容", command=self.on_view_selected_summary).pack(side=tk.LEFT, padx=8)
         ttk.Button(action_bar, text="刷新文献", command=self.refresh_downloaded_articles_table).pack(side=tk.LEFT, padx=8)
 
         cfg = ttk.LabelFrame(parent, text="大模型配置", padding=14, style="Card.TLabelframe")
@@ -619,8 +626,31 @@ class PaperBotGUI:
         except Exception as e:
             self.log(f"• 读取文献列表失败：{e}")
             rows = []
+
+        rows.sort(key=lambda r: str(r[0] or ""), reverse=self.download_date_sort_desc)
         for row in rows:
             self.downloaded_tree.insert("", tk.END, values=row)
+
+    def sort_downloaded_by_date(self) -> None:
+        self.download_date_sort_desc = not self.download_date_sort_desc
+        self.refresh_downloaded_articles_table()
+
+    def on_view_selected_summary(self) -> None:
+        selected = self.downloaded_tree.selection()
+        if not selected:
+            messagebox.showwarning("提示", "请先选择要查看总结的文献")
+            return
+        selected_dois: list[str] = []
+        for item in selected:
+            vals = self.downloaded_tree.item(item, "values")
+            doi = (vals[3] if len(vals) >= 4 else "")
+            doi = str(doi).strip()
+            if doi:
+                selected_dois.append(doi)
+        if not selected_dois:
+            messagebox.showwarning("提示", "选中的记录没有 DOI")
+            return
+        self._render_summary_for_selected(selected_dois)
 
     def on_add_journal(self) -> None:
         name = self.journal_name.get().strip()
