@@ -460,15 +460,19 @@ class PaperBotGUI:
         self.downloaded_tree.column("summary_status", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("keywords", width=260)
 
-        ybar = ttk.Scrollbar(top, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
-        xbar = ttk.Scrollbar(top, orient=tk.HORIZONTAL, command=self.downloaded_tree.xview)
+        table_wrap = ttk.Frame(top)
+        table_wrap.pack(fill=tk.BOTH, expand=True)
+        ybar = ttk.Scrollbar(table_wrap, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
+        xbar = ttk.Scrollbar(table_wrap, orient=tk.HORIZONTAL, command=self.downloaded_tree.xview)
         self.downloaded_tree.configure(
             yscrollcommand=lambda first, last: self._on_tree_scrolled(ybar, first, last),
             xscrollcommand=lambda first, last: self._on_tree_scrolled(xbar, first, last),
         )
-        ybar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.downloaded_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        xbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.downloaded_tree.grid(in_=table_wrap, row=0, column=0, sticky="nsew")
+        ybar.grid(in_=table_wrap, row=0, column=1, sticky="ns")
+        xbar.grid(in_=table_wrap, row=1, column=0, sticky="ew")
+        table_wrap.rowconfigure(0, weight=1)
+        table_wrap.columnconfigure(0, weight=1)
 
         action_bar = ttk.Frame(parent)
         action_bar.pack(fill=tk.X, pady=(8, 0))
