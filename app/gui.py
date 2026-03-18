@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import json
 import re
 import sqlite3
 import subprocess
@@ -44,6 +45,19 @@ def _load_yaml(path: Path) -> dict:
 def _save_yaml(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
+def _keywords_json_to_text(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, list):
+            return "; ".join(str(x) for x in obj if str(x).strip())
+        return str(obj)
+    except Exception:
+        return raw
 
 
 def _append_journal(name: str, publisher: str, issn_print: str, issn_online: str) -> None:
@@ -189,7 +203,7 @@ def _get_db_path_from_cfg() -> Path:
     return (BASE_DIR / "data" / "papers.db").resolve()
 
 
-def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str, str, str]]:
+def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str, str, str, str]]:
     db_path = _get_db_path_from_cfg()
     if not db_path.exists():
         return []
@@ -205,7 +219,8 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                   COALESCE(a.journal, ''),
                   f.doi,
                   COALESCE(f.status, ''),
-                  CASE WHEN lower(COALESCE(s.status, ''))='ok' THEN '已总结' ELSE '未总结' END
+                  CASE WHEN lower(COALESCE(s.status, ''))='ok' THEN '已总结' ELSE '未总结' END,
+                  COALESCE(s.keywords_json, '')
                 FROM fulltexts f
                 LEFT JOIN articles a ON a.doi = f.doi
                 LEFT JOIN summaries s ON s.doi = f.doi
@@ -225,7 +240,8 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                   COALESCE(a.journal, ''),
                   f.doi,
                   COALESCE(f.status, ''),
-                  '未总结'
+                  '未总结',
+                  ''
                 FROM fulltexts f
                 LEFT JOIN articles a ON a.doi = f.doi
                 ORDER BY COALESCE(f.downloaded_at, '') DESC
@@ -233,7 +249,7 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                 """,
                 (limit,),
             ).fetchall()
-        return [(str(r[0] or ""), str(r[1] or ""), str(r[2] or ""), str(r[3] or ""), str(r[4] or ""), str(r[5] or "")) for r in rows]
+        return [(str(r[0] or ""), str(r[1] or ""), str(r[2] or ""), str(r[3] or ""), str(r[4] or ""), str(r[5] or ""), _keywords_json_to_text(str(r[6] or ""))) for r in rows]
     finally:
         conn.close()
 
@@ -410,7 +426,7 @@ class PaperBotGUI:
         top = ttk.LabelFrame(parent, text="已下载文献", padding=14, style="Card.TLabelframe")
         top.pack(fill=tk.X, expand=False)
 
-        cols = ("published", "title", "journal", "doi", "status", "summary_status")
+        cols = ("published", "title", "journal", "doi", "status", "summary_status", "keywords")
         self.downloaded_tree = ttk.Treeview(top, columns=cols, show="headings", height=8, selectmode="extended")
         self.downloaded_tree.heading("published", text="日期", command=lambda: self.sort_downloaded_by_date())
         self.downloaded_tree.heading("title", text="标题")
@@ -418,17 +434,21 @@ class PaperBotGUI:
         self.downloaded_tree.heading("doi", text="DOI")
         self.downloaded_tree.heading("status", text="下载状态")
         self.downloaded_tree.heading("summary_status", text="是否已总结")
+        self.downloaded_tree.heading("keywords", text="关键词")
         self.downloaded_tree.column("published", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("title", width=330)
         self.downloaded_tree.column("journal", width=180)
         self.downloaded_tree.column("doi", width=200)
         self.downloaded_tree.column("status", width=90, anchor=tk.CENTER)
         self.downloaded_tree.column("summary_status", width=90, anchor=tk.CENTER)
+        self.downloaded_tree.column("keywords", width=260)
 
         ybar = ttk.Scrollbar(top, orient=tk.VERTICAL, command=self.downloaded_tree.yview)
-        self.downloaded_tree.configure(yscrollcommand=ybar.set)
-        self.downloaded_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ybar.pack(side=tk.LEFT, fill=tk.Y)
+        xbar = ttk.Scrollbar(top, orient=tk.HORIZONTAL, command=self.downloaded_tree.xview)
+        self.downloaded_tree.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+        self.downloaded_tree.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        xbar.pack(side=tk.BOTTOM, fill=tk.X)
+        ybar.pack(side=tk.RIGHT, fill=tk.Y)
 
         action_bar = ttk.Frame(parent)
         action_bar.pack(fill=tk.X, pady=(8, 0))
