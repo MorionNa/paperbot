@@ -21,9 +21,9 @@ dashscope_api_key: "<your-dashscope-key>"
 elsevier_api_key: "<your-elsevier-key>"
 elsevier_insttoken: "<optional-insttoken>"
 wiley_tdm_client_token: "<your-wiley-tdm-token>"
+springer_api_key: "<your-springer-key>"
+ieee_api_key: "<your-ieee-key>"
 ```
-
-4. 如需 IEEE 下载，请额外在环境变量中设置 `IEEE_API_KEY`（`secrets.yml` 当前未映射该字段）。
 
 ---
 
@@ -60,8 +60,9 @@ python app/summarize_papers.py
 说明：
 
 - 该脚本会读取 `parsed_texts` 中尚未成功总结（`summaries.status != 'ok'`）且正文长度足够的记录。
-- 先分块生成 chunk 摘要，再合并生成结构化 JSON（`method_summary` / `result_summary` / `keywords` / `tags` 等）。
-- 结果写入 `summaries` 表（成功为 `ok`，失败为 `failed`）。
+- 支持通过 `--dois` 指定 DOI 列表，只总结指定文献（逗号分隔）。
+- 使用全文一次性生成结构化 JSON（`method_summary` / `result_summary` / `keywords` / `tags` 等），不再走本地 chunk 合并流程。
+- 结果写入 `summaries` 表（成功为 `ok`，失败为 `failed`），并记录跳过/失败原因便于排查。
 - 每次处理上限由 `config.yml` 的 `summarize.limit_per_run` 控制。
 
 ## Fulltext 下载能力
@@ -134,3 +135,48 @@ pipeline:
 说明：
 - 当 `date_from/date_until` 同时存在时，会覆盖 `lookback_days`。
 - 两者必须同时配置，且 `date_from <= date_until`。
+
+### 4) 图形界面（GUI）配置与一键运行
+
+在仓库根目录执行：
+
+```bash
+python app/gui.py
+```
+
+GUI 提供三块功能：
+
+- 添加期刊：填写期刊名称、publisher、ISSN 信息后点击“添加期刊”，会追加到 `config/config.yml` 的 `journals` 列表。
+- 设置 API Key：支持 Elsevier / Wiley / Springer / IEEE，点击“确认保存 Key”后写入 `config/secrets.yml`。
+- 指定时间运行：输入开始与结束时间（`YYYY-MM-DD`），点击“下载并运行”，会写入 `pipeline.date_from/date_until` 并自动执行 `app/run_daily.py`。
+
+---
+
+### 5) 打包成可直接双击运行的应用（PyInstaller）
+
+推荐先使用 `onedir` 模式（比 `onefile` 更稳定，且便于携带 `config/` 等运行目录）。
+
+1. 安装打包工具：
+
+```bash
+pip install pyinstaller
+```
+
+2. 在仓库根目录执行打包：
+
+```bash
+pyinstaller --noconfirm --windowed --name PaperBot app/gui.py
+```
+
+3. 打包后将以下目录复制到 `dist/PaperBot/`（与可执行文件同级）：
+
+- `config/`
+- `data/`（可选，若希望携带已有数据库/缓存）
+- `outputs/`（可选）
+
+4. 用户可直接运行：
+
+- Windows：`dist/PaperBot/PaperBot.exe`
+- macOS/Linux：`dist/PaperBot/PaperBot`
+
+> 说明：GUI 运行依赖相对路径读取 `config/config.yml` 与 `config/secrets.yml`，因此打包后需要保留上述目录结构。

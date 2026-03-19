@@ -1,12 +1,12 @@
 # app/summarize_papers.py
 from __future__ import annotations
+import argparse
 import os
 import json
 import sqlite3
 from datetime import datetime
 
 from infra.db import connect_sqlite, init_db
-from core.summarize.chunking import chunk_text
 from core.summarize.schema import SUMMARY_SCHEMA
 from infra.llm.types import LLMQuotaError
 
@@ -31,6 +31,49 @@ def fetch_unsummarized(conn: sqlite3.Connection, limit: int = 20):
         (limit,),
     ).fetchall()
 
+
+def fetch_unsummarized_by_dois(conn: sqlite3.Connection, dois: list[str], limit: int = 200):
+    if not dois:
+        return []
+    placeholders = ",".join(["?"] * len(dois))
+    return conn.execute(
+        f"""
+        SELECT p.doi, p.title, p.abstract, p.body_text, a.journal
+        FROM parsed_texts p
+        LEFT JOIN summaries s ON s.doi = p.doi
+        LEFT JOIN articles a ON a.doi = p.doi
+        WHERE p.doi IN ({placeholders})
+          AND (s.doi IS NULL OR s.status != 'ok')
+          AND p.body_text IS NOT NULL AND length(p.body_text) > 1000
+        ORDER BY p.parsed_at DESC
+        LIMIT ?;
+        """,
+        (*dois, limit),
+    ).fetchall()
+
+
+
+
+def diagnose_selected_doi(conn: sqlite3.Connection, doi: str) -> str:
+    parsed = conn.execute(
+        "SELECT length(COALESCE(body_text, '')) FROM parsed_texts WHERE doi = ? LIMIT 1;",
+        (doi,),
+    ).fetchone()
+    summary = conn.execute(
+        "SELECT status FROM summaries WHERE doi = ? LIMIT 1;",
+        (doi,),
+    ).fetchone()
+
+    if summary and str(summary[0] or "").strip().lower() == "ok":
+        return "already summarized (status=ok)"
+    if not parsed:
+        return "no parsed_texts row for this DOI (请先完成解析)"
+    body_len = int(parsed[0] or 0)
+    if body_len <= 1000:
+        return f"body_text too short ({body_len} chars <= 1000)"
+    if summary:
+        return f"existing summary status={summary[0]}"
+    return "not selected by query (unknown filter mismatch)"
 
 def upsert_summary(conn: sqlite3.Connection, doi: str, rec: dict):
     conn.execute(
@@ -65,62 +108,100 @@ def upsert_summary(conn: sqlite3.Connection, doi: str, rec: dict):
     conn.commit()
 
 def main():
+    parser = argparse.ArgumentParser(description="Summarize parsed papers")
+    parser.add_argument("--dois", type=str, default="", help="Comma-separated DOI list. If set, summarize only these DOIs.")
+    args = parser.parse_args()
+
     base_dir = Path(__file__).resolve().parents[1]
+    print("[summarize] stage=load_secrets start")
     load_secrets_into_env(base_dir)
+    print("[summarize] stage=load_secrets done")
+    print("[summarize] stage=load_config start")
     cfg = yaml.safe_load((base_dir / "config" / "config.yml").read_text(encoding="utf-8"))
+    print("[summarize] stage=load_config done")
+    print("[summarize] stage=db_connect start")
     conn = connect_sqlite(cfg["pipeline"]["db_url"], base_dir)
     init_db(conn)
+    print("[summarize] stage=db_connect done")
 
     # ------- 通用 LLM client -------
     print("llm.base_url =", cfg["llm"].get("base_url"))
-    print("DASHSCOPE_API_KEY len =", len(os.getenv("DASHSCOPE_API_KEY", "")))
+    api_key_env = cfg["llm"].get("api_key_env", "OPENAI_API_KEY")
+    print(f"{api_key_env} len =", len(os.getenv(api_key_env, "")))
+    print("[summarize] stage=make_llm start")
     llm = make_llm(cfg)
+    print("[summarize] stage=make_llm done")
 
     limit = int(cfg["summarize"]["limit_per_run"])
-    max_chars = int(cfg["summarize"]["chunk_max_chars"])
-    max_chunks = int(cfg["summarize"]["max_chunks"])
     max_output_tokens = int(cfg["llm"]["max_output_tokens"])
     stop_on_quota = bool(cfg["llm"].get("stop_on_quota", True))
 
-    rows = fetch_unsummarized(conn, limit=limit)
+    selected_dois = [x.strip() for x in (args.dois or "").split(",") if x.strip()]
+    print(f"[summarize] selected_dois={selected_dois}")
+    print("[summarize] stage=fetch_candidates start")
+    if selected_dois:
+        rows = fetch_unsummarized_by_dois(conn, selected_dois, limit=max(limit, len(selected_dois)))
+    else:
+        rows = fetch_unsummarized(conn, limit=limit)
+    print("[summarize] stage=fetch_candidates done")
     print(f"to_summarize: {len(rows)}")
 
-    system_chunk = (
-        "你是结构工程科研助理。请阅读论文正文的一个片段，输出该片段的摘要（100-200字），"
-        "重点提炼：方法要点、实验/结果线索、关键术语。用中文输出。"
-    )
+    if selected_dois:
+        candidate_set = {str(r[0] or "").strip() for r in rows}
+        missing_dois = [d for d in selected_dois if d not in candidate_set]
+        if missing_dois:
+            print(f"[summarize] skipped_dois={missing_dois}")
+        for d in missing_dois:
+            reason = diagnose_selected_doi(conn, d)
+            print(f"[summarize] skipped {d}: {reason}")
+            # 已经成功总结过的 DOI 不应被 failed 结果覆盖
+            if reason.startswith("already summarized"):
+                print(f"[summarize] keep existing summary for {d}")
+                continue
+            upsert_summary(
+                conn,
+                d,
+                {
+                    "model": cfg["llm"]["model"],
+                    "method_summary": "",
+                    "result_summary": "",
+                    "keywords_json": "[]",
+                    "tags_json": "[]",
+                    "summary_json": "{}",
+                    "status": "failed",
+                    "error": reason,
+                },
+            )
+
     system_final = (
-        "你是结构工程科研助理。请基于论文信息与分块摘要，输出结构化总结。"
+        "你是结构工程科研助理。请基于论文标题、摘要与全文，输出结构化总结。"
         "用中文输出，必要的专业术语保留英文缩写（如 PINN/GNN）。"
+        "重点回答四个问题：1) 解决的科学问题；2) 工程背景；3) 方法；4) 结论。"
+        "其中，科学问题/工程背景/方法请写入 method_summary，结论请写入 result_summary。"
         "不要编造不存在的数值或结论。"
+        "必须输出严格合法的 JSON，不能输出 markdown、代码块或额外解释。"
+        "JSON 字符串中的反斜杠必须合法转义，禁止出现非法转义（如 \_、\(、\\x 等）。"
     )
 
     for i, (doi, title, abstract, body_text, journal) in enumerate(rows, 1):
         print(f"[{i}/{len(rows)}] {doi} ({journal})", flush=True)
 
         try:
-            chunks = chunk_text(body_text, max_chars=max_chars, overlap=300)[:max_chunks]
-            if not chunks:
-                raise RuntimeError("empty chunks")
+            body = (body_text or "").strip()
+            if not body:
+                raise RuntimeError("empty body_text")
 
-            # A) chunk summaries（通用接口）
-            c_summaries = []
-            for k, ch in enumerate(chunks, 1):
-                s = llm.generate_text(
-                    system=system_chunk,
-                    user=f"Title: {title}\nChunk {k}/{len(chunks)}:\n{ch}",
-                    max_output_tokens=300,
-                ).text.strip()
-                c_summaries.append(s)
-
-            # B) final structured summary（你问的这段就放在这里）
             user_prompt = (
                 f"Title: {title or ''}\n"
                 f"Abstract: {abstract or ''}\n\n"
-                "Chunk summaries:\n" + "\n".join(f"- {x}" for x in c_summaries if x.strip()) + "\n\n"
+                f"Full text:\n{body}\n\n"
                 "请按 JSON Schema 输出：method_summary / result_summary / keywords / tags / notes。"
+                "其中 method_summary 必须覆盖：科学问题、工程背景、方法；result_summary 必须覆盖主要结论。"
+                "仅输出单个合法 JSON 对象；不要输出任何额外文本。"
+                "注意 JSON 转义合法性，遇到反斜杠请使用双反斜杠。"
             )
 
+            print("  -> full-text json summarize start")
             data = llm.generate_json(
                 system=system_final,
                 user=user_prompt,
@@ -128,6 +209,7 @@ def main():
                 max_output_tokens=max_output_tokens,
             )
 
+            print("  -> full-text json summarize done")
             rec = {
                 "model": cfg["llm"]["model"],
                 "method_summary": data.get("method_summary", ""),
@@ -165,6 +247,7 @@ def main():
             )
             print(f"  -> failed: {e!r}", flush=True)
 
+    print("[summarize] stage=db_close")
     conn.close()
     print("Done.")
 

@@ -36,6 +36,7 @@ def main():
         print(f"[{done}/{len(rows)}] parsed {doi} (len={len(body_text)})", flush=True)
 
     conn.close()
+    print(f"parsed_success_count: {done}")
     print("Done.")
 
 

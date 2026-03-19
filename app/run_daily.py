@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 import pandas as pd
 import os
+import re
 import yaml
 import csv
 from typing import Dict, List, Optional
@@ -202,6 +203,34 @@ def _sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
+def _safe_file_stem(text: str, fallback: str, max_len: int = 120) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return fallback
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]+', ' ', raw)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().rstrip('.')
+    if not cleaned:
+        return fallback
+    if len(cleaned) > max_len:
+        cleaned = cleaned[:max_len].rstrip()
+    return cleaned or fallback
+
+
+def _rename_wiley_pdf_by_title(pdf_path: Path, title: str, doi: str) -> Path:
+    stem = _safe_file_stem(title, fallback=doi.replace('/', '_'))
+    target = pdf_path.with_name(stem + ".pdf")
+    if target == pdf_path:
+        return pdf_path
+
+    if target.exists():
+        suffix = doi.split('/')[-1].strip() or "doi"
+        suffix = _safe_file_stem(suffix, fallback="doi", max_len=40)
+        target = pdf_path.with_name(f"{stem}__{suffix}.pdf")
+
+    os.replace(pdf_path, target)
+    return target
+
+
 def _parse_results_csv(results_csv: Path, run_dir: Path) -> Dict[str, Path]:
     """
     兼容解析 wiley-tdm 输出的 results.csv，提取 doi -> file_path
@@ -265,7 +294,9 @@ def download_wiley_via_tdm_client(conn, base_dir: Path, cfg: dict, dois: List[st
 
     if not os.getenv("TDM_API_TOKEN"):
         for doi in dois:
-            upsert_fulltext(conn, doi, {
+            resolved_path_map[doi] = p
+
+        upsert_fulltext(conn, doi, {
                 "provider": "wiley",
                 "format": "pdf",
                 "file_path": "",
@@ -320,6 +351,7 @@ def download_wiley_via_tdm_client(conn, base_dir: Path, cfg: dict, dois: List[st
 
     ok = 0
     doi_set = set(dois)
+    resolved_path_map: Dict[str, Path] = {}
 
     for doi in dois:
         p = csv_map.get(doi) or _try_find_pdf_by_suffix(downloads_dir, doi)
@@ -335,6 +367,15 @@ def download_wiley_via_tdm_client(conn, base_dir: Path, cfg: dict, dois: List[st
                 "downloaded_at": datetime.now().isoformat(timespec="seconds"),
             })
             continue
+
+        title = next((x.get("title", "") for x in articles if (x.get("doi") or "").strip() == doi), "")
+        try:
+            p = _rename_wiley_pdf_by_title(p, title=title, doi=doi)
+        except Exception:
+            # 重命名失败不影响入库
+            pass
+
+        resolved_path_map[doi] = p
 
         upsert_fulltext(conn, doi, {
             "provider": "wiley",
@@ -352,8 +393,8 @@ def download_wiley_via_tdm_client(conn, base_dir: Path, cfg: dict, dois: List[st
     for a in articles:
         d = (a.get("doi") or "").strip()
         if d in doi_set:
-            p = csv_map.get(d) or _try_find_pdf_by_suffix(downloads_dir, d)
-            if p and p.exists():
+            p = resolved_path_map.get(d) or csv_map.get(d) or _try_find_pdf_by_suffix(downloads_dir, d)
+            if p and Path(p).exists():
                 a["fulltext_status"] = "ok"
                 a["fulltext_path"] = str(p)
             else:
@@ -452,6 +493,16 @@ def main():
     if wiley_pending:
         wiley_pending = wiley_pending[:wiley_limit]
         download_wiley_via_tdm_client(conn, base_dir, cfg, wiley_pending, all_new)
+
+    # 仅保留下载成功的论文到 papers.db（本轮新发现条目）
+    successful_new: List[dict] = [a for a in all_new if (a.get("fulltext_status") or "").lower() == "ok"]
+    failed_new_dois = [(a.get("doi") or "").strip() for a in all_new if (a.get("fulltext_status") or "").lower() != "ok" and (a.get("doi") or "").strip()]
+    if failed_new_dois:
+        conn.executemany("DELETE FROM fulltexts WHERE doi = ?;", [(d,) for d in failed_new_dois])
+        conn.executemany("DELETE FROM articles WHERE doi = ?;", [(d,) for d in failed_new_dois])
+        conn.commit()
+        print(f"[DB CLEANUP] removed non-downloaded records: {len(failed_new_dois)}", flush=True)
+    all_new = successful_new
 
     out_path = _dated_output_path(base_dir, cfg["pipeline"])
     export_new_articles_with_summaries(conn, all_new, out_path)
