@@ -1,6 +1,7 @@
 # app/run_daily.py
 from __future__ import annotations
 
+import argparse
 from datetime import date, timedelta, datetime
 from pathlib import Path
 import json
@@ -22,6 +23,38 @@ def _load_config(base_dir: Path) -> dict:
     cfg_path = base_dir / "config" / "config.yml"
     with open(cfg_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--journal-indexes",
+        default="",
+        help="Comma-separated indexes into config.yml journals to process",
+    )
+    return parser.parse_args()
+
+
+def _select_journals(all_journals: list[dict], journal_indexes_raw: str) -> list[dict]:
+    if not journal_indexes_raw.strip():
+        return list(all_journals)
+
+    indexes: list[int] = []
+    for part in journal_indexes_raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            indexes.append(int(token))
+        except ValueError as e:
+            raise ValueError(f"invalid journal index: {token!r}") from e
+
+    selected: list[dict] = []
+    for idx in indexes:
+        if idx < 0 or idx >= len(all_journals):
+            raise ValueError(f"journal index out of range: {idx}")
+        selected.append(all_journals[idx])
+    return selected
 
 
 def _dated_output_path(base_dir: Path, pipeline_cfg: dict) -> Path:
@@ -294,9 +327,7 @@ def download_wiley_via_tdm_client(conn, base_dir: Path, cfg: dict, dois: List[st
 
     if not os.getenv("TDM_API_TOKEN"):
         for doi in dois:
-            resolved_path_map[doi] = p
-
-        upsert_fulltext(conn, doi, {
+            upsert_fulltext(conn, doi, {
                 "provider": "wiley",
                 "format": "pdf",
                 "file_path": "",
@@ -406,12 +437,15 @@ def download_wiley_via_tdm_client(conn, base_dir: Path, cfg: dict, dois: List[st
 
 def main():
     base_dir = Path(__file__).resolve().parents[1]
+    args = _parse_args()
     load_secrets_into_env(base_dir)
 
     print("ELSEVIER_API_KEY len =", len(os.getenv("ELSEVIER_API_KEY", "")), flush=True)
     print("WILEY_TDM_CLIENT_TOKEN len =", len(os.getenv("WILEY_TDM_CLIENT_TOKEN", "")), flush=True)
 
     cfg = _load_config(base_dir)
+    selected_journals = _select_journals(cfg["journals"], args.journal_indexes)
+    print(f"[JOURNALS] selected={len(selected_journals)}/{len(cfg['journals'])}", flush=True)
 
     from_d, until_d = _resolve_date_range(cfg["pipeline"])
     print(f"[DATE RANGE] from={from_d} until={until_d}", flush=True)
@@ -429,11 +463,13 @@ def main():
     init_db(conn)
 
     all_new: List[dict] = []
-    for j in cfg["journals"]:
+    for j in selected_journals:
         items = discover_recent_papers_for_journal(client, j, from_d, until_d)
         new_items = insert_articles(conn, items)
         print(f"[{j['name']}] fetched={len(items)} inserted(new)={len(new_items)}")
         all_new.extend(new_items)
+
+    download_targets = list(all_new)
 
     # ---- Fulltext download ----
     router = DownloadRouter.from_app_config(base_dir, cfg)
@@ -444,13 +480,13 @@ def main():
 
     wiley_pending: List[str] = []
 
-    for idx, a in enumerate(all_new, 1):
+    for idx, a in enumerate(download_targets, 1):
         doi = a["doi"]
-        print(f"[DL {idx}/{len(all_new)}] {doi}", flush=True)
+        print(f"[DL {idx}/{len(download_targets)}] {doi}", flush=True)
 
         if get_fulltext_status(conn, doi) == "ok":
             a["fulltext_status"] = "ok"
-            a["fulltext_path"] = ""
+            a["fulltext_path"] = a.get("fulltext_path", "")
             print("  -> already ok", flush=True)
             continue
 
@@ -492,17 +528,10 @@ def main():
     # ✅ Wiley 批量下载（限制每日数量）
     if wiley_pending:
         wiley_pending = wiley_pending[:wiley_limit]
-        download_wiley_via_tdm_client(conn, base_dir, cfg, wiley_pending, all_new)
+        download_wiley_via_tdm_client(conn, base_dir, cfg, wiley_pending, download_targets)
 
     # 仅保留下载成功的论文到 papers.db（本轮新发现条目）
-    successful_new: List[dict] = [a for a in all_new if (a.get("fulltext_status") or "").lower() == "ok"]
-    failed_new_dois = [(a.get("doi") or "").strip() for a in all_new if (a.get("fulltext_status") or "").lower() != "ok" and (a.get("doi") or "").strip()]
-    if failed_new_dois:
-        conn.executemany("DELETE FROM fulltexts WHERE doi = ?;", [(d,) for d in failed_new_dois])
-        conn.executemany("DELETE FROM articles WHERE doi = ?;", [(d,) for d in failed_new_dois])
-        conn.commit()
-        print(f"[DB CLEANUP] removed non-downloaded records: {len(failed_new_dois)}", flush=True)
-    all_new = successful_new
+    all_new = [a for a in all_new if (a.get("fulltext_status") or "").lower() == "ok"]
 
     out_path = _dated_output_path(base_dir, cfg["pipeline"])
     export_new_articles_with_summaries(conn, all_new, out_path)

@@ -1,39 +1,154 @@
 journals:
-  - name: Earthquake Engineering & Structural Dynamics
-    publisher: wiley
-    crossref_issn: "1096-9845"   # online
-    issn_print: "0098-8847"
-
+- name: Automation in Construction
+  publisher: elsevier
+  issn_print: 0926-5805
+  issn_online: 1872-7891
+  crossref_issn: 1872-7891
+- name: Computer-Aided Civil and Infrastructure Engineering
+  publisher: elsevier
+  issn_print: 1093-9687
+  issn_online: 1467-8667
+  crossref_issn: 1467-8667
+- name: Computer-Aided Civil and Infrastructure Engineering
+  publisher: wiley
+  issn_print: 1093-9687
+  issn_online: 1467-8667
+  crossref_issn: 1467-8667
+- name: Advanced Engineering Informatics
+  publisher: elsevier
+  issn_print: 1474-0346
+  issn_online: 1873-5320
+  crossref_issn: 1873-5320
+- name: Engineering Applications of Artificial Intelligence
+  publisher: elsevier
+  issn_print: 0952-1976
+  issn_online: 1873-6769
+  crossref_issn: 1873-6769
+- name: Computers in Industry
+  publisher: elsevier
+  issn_print: 0166-3615
+  issn_online: 1872-6194
+  crossref_issn: 1872-6194
+- name: Mechanical Systems and Signal Processing
+  publisher: elsevier
+  issn_print: 0888-3270
+  issn_online: 1096-1216
+  crossref_issn: 1096-1216
+- name: Computer Methods in Applied Mechanics and Engineering
+  publisher: elsevier
+  issn_print: 0045-7825
+  issn_online: 1879-2138
+  crossref_issn: 1879-2138
+- name: Structural Safety
+  publisher: elsevier
+  issn_print: 0167-4730
+  issn_online: 1879-3355
+  crossref_issn: 1879-3355
+- name: Journal of Building Engineering
+  publisher: elsevier
+  issn_online: 2352-7102
+  crossref_issn: 2352-7102
+- name: Reliability Engineering & System Safety
+  publisher: elsevier
+  issn_print: 0951-8320
+  issn_online: 1879-0836
+  crossref_issn: 1879-0836
+- name: Engineering Structures
+  publisher: elsevier
+  issn_print: 0141-0296
+  issn_online: 1873-7323
+  crossref_issn: 1873-7323
+- name: Expert Systems With Applications
+  publisher: elsevier
+  issn_print: 0957-4174
+  issn_online: 1873-6793
+  crossref_issn: 1873-6793
+- name: Knowledge-Based Systems
+  publisher: elsevier
+  issn_print: 0950-7051
+  issn_online: 1872-7409
+  crossref_issn: 1872-7409
+- name: Results in Engineering
+  publisher: elsevier
+  issn_online: 2590-1230
+  crossref_issn: 2590-1230
+- name: Engineering with Computers
+  publisher: springer
+  issn_print: 0177-0667
+  issn_online: 1435-5663
+  crossref_issn: 1435-5663
+- name: Building and Environment
+  publisher: elsevier
+  issn_print: 0360-1323
+  issn_online: 1873-684X
+  crossref_issn: 1873-684X
+- name: Structural Control and Health Monitoring
+  publisher: wiley
+  issn_print: 1545-2255
+  issn_online: 1545-2263
+  crossref_issn: 1545-2263
+- name: Engineering
+  publisher: elsevier
+  issn_print: 2095-8099
+  issn_online: 2096-0026
+  crossref_issn: 2096-0026
+- name: Applied Soft Computing
+  publisher: elsevier
+  issn_print: 1568-4946
+  issn_online: 1872-9681
+  crossref_issn: 1872-9681
+- name: Journal of Computational Physics
+  publisher: elsevier
+  issn_print: 0021-9991
+  issn_online: 1090-2716
+  crossref_issn: 1090-2716
+- name: Archives of Computational Methods in Engineering
+  publisher: springer
+  issn_print: 1134-3060
+  issn_online: 1886-1784
+  crossref_issn: 1886-1784
+- name: Information Fusion
+  publisher: elsevier
+  issn_print: 1566-2535
+  issn_online: 1872-6305
+  crossref_issn: 1872-6305
+- name: IEEE Transactions on Pattern Analysis and Machine Intelligence
+  publisher: elsevier
+  issn_print: 0162-8828
+  issn_online: 1939-3539
+  crossref_issn: 1939-3539
+- name: Earthquake Engineering & Structural Dynamics
+  publisher: wiley
+  issn_print: 0098-8847
+  issn_online: 1096-9845
+  crossref_issn: 1096-9845
 pipeline:
   lookback_days: 30
-  # 可选：固定时间范围抓取（YYYY-MM-DD）；若填写则覆盖 lookback_days
-  # date_from: "2024-01-01"
-  # date_until: "2024-01-31"
-  output_excel: "outputs/daily_papers.xlsx"
-  db_url: "sqlite:///data/papers.db"
-  
+  output_excel: outputs/daily_papers.xlsx
+  db_url: sqlite:///data/papers.db
+  date_from: '2026-01-01'
+  date_until: '2026-03-20'
 crossref:
-  mailto: "senna_wang@emails.bjut.edu.cn"
+  mailto: senna_wang@emails.bjut.edu.cn
   timeout_sec: 30
   per_page: 200
   polite_sleep_sec: 1.0
-  
 download:
   timeout_sec: 60
   polite_sleep_sec: 1.0
-  
-  wiley_mode: "tdm_client"
+  wiley_mode: tdm_client
   wiley_limit_per_run: 30
-  wiley_run_dir: "data/wiley_tdm_runs"
-
+  wiley_run_dir: data/wiley_tdm_runs
 llm:
-  provider: "openai"
-  model: "qwen3.5-plus"
-  api_key_env: "DASHSCOPE_API_KEY"
-  base_url: "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1"
-  max_output_tokens: 900
-
+  provider: qwen
+  model: qwen3.5-plus-2026-02-15
+  api_key_env: DASHSCOPE_API_KEY
+  base_url: https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1
+  max_output_tokens: 1000
 summarize:
-  limit_per_run: 3       # 每天免费额度就跑几篇
+  limit_per_run: 3
   chunk_max_chars: 8000
   max_chunks: 8
+gui:
+  summary_base_urls:
+    千问: https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1

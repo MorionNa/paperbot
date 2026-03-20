@@ -16,6 +16,7 @@ from tkinter import messagebox, ttk
 
 import yaml
 from app.gui_style import apply_theme, BG_MAIN, BG_PANEL, BORDER, TEXT_MAIN
+from infra.db import delete_papers_by_dois, resolve_fulltext_status
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BASE_DIR / "config" / "config.yml"
@@ -115,7 +116,7 @@ def _save_provider_api_keys(elsevier_key: str, wiley_key: str, springer_key: str
     _save_yaml(SECRETS_PATH, secrets)
 
 
-def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tokens: str) -> None:
+def _save_summary_llm_config(provider: str, model: str, base_url: str, api_key: str, max_tokens: str) -> None:
     cfg = _load_yaml(CONFIG_PATH)
     llm = cfg.setdefault("llm", {})
     gui = cfg.setdefault("gui", {})
@@ -126,6 +127,7 @@ def _save_summary_llm_config(provider: str, base_url: str, api_key: str, max_tok
 
     normalized_base_url = (base_url or "").strip() or default_base_url
     llm["provider"] = llm_provider
+    llm["model"] = (model or "").strip()
     llm["base_url"] = normalized_base_url
     llm["api_key_env"] = env_name
     summary_base_urls[selected] = normalized_base_url
@@ -178,6 +180,7 @@ def _load_saved_gui_settings() -> dict:
         "springer_api_key": sec.get("springer_api_key", ""),
         "ieee_api_key": sec.get("ieee_api_key", ""),
         "summary_base_url": saved_base_url,
+        "summary_model": str(llm.get("model", "") or ""),
         "summary_max_tokens": str(llm.get("max_output_tokens", "") or ""),
         "summary_provider": ui_provider,
         "summary_api_key": saved_api_key,
@@ -230,6 +233,7 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                   COALESCE(a.journal, ''),
                   f.doi,
                   COALESCE(f.status, ''),
+                  COALESCE(f.file_path, ''),
                   CASE WHEN lower(COALESCE(s.status, ''))='ok' THEN '查看' ELSE '未总结' END,
                   COALESCE(s.keywords_json, '')
                 FROM fulltexts f
@@ -252,6 +256,7 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                   f.doi,
                   COALESCE(f.status, ''),
                   '未总结',
+                  COALESCE(f.file_path, ''),
                   ''
                 FROM fulltexts f
                 LEFT JOIN articles a ON a.doi = f.doi
@@ -260,7 +265,31 @@ def _load_downloaded_articles(limit: int = 300) -> list[tuple[str, str, str, str
                 """,
                 (limit,),
             ).fetchall()
-        return [(str(r[0] or ""), str(r[1] or ""), str(r[2] or ""), str(r[3] or ""), str(r[4] or ""), str(r[5] or ""), _keywords_json_to_text(str(r[6] or ""))) for r in rows]
+        result: list[tuple[str, str, str, str, str, str, str]] = []
+        for row in rows:
+            first_extra = str(row[5] or "")
+            second_extra = str(row[6] or "")
+            if "\\" in first_extra or "/" in first_extra or Path(first_extra).suffix.lower() in (".xml", ".pdf", ".html", ".txt"):
+                file_path = first_extra
+                summary_status = second_extra
+            else:
+                file_path = second_extra
+                summary_status = first_extra
+
+            effective_status = resolve_fulltext_status(str(row[4] or ""), file_path)
+            status_text = "下载" if effective_status == "missing_file" else effective_status
+            result.append(
+                (
+                    str(row[0] or ""),
+                    str(row[1] or ""),
+                    str(row[2] or ""),
+                    str(row[3] or ""),
+                    status_text,
+                    summary_status,
+                    _keywords_json_to_text(str(row[7] or "")),
+                )
+            )
+        return result
     finally:
         conn.close()
 
@@ -343,6 +372,7 @@ class PaperBotGUI:
         self.download_keyword_all: list[str] = []
         self.download_keyword_selected: set[str] = set()
         self.keyword_search_var = tk.StringVar()
+        self.status_link_labels: dict[str, tk.Label] = {}
         self.summary_link_labels: dict[str, tk.Label] = {}
         self.summary_link_font = tkfont.Font(family="Arial", size=10, underline=True)
         self.active_page = "download"
@@ -399,6 +429,7 @@ class PaperBotGUI:
         self.summary_base_url.set(str(saved.get("summary_base_url", "") or ""))
         self.summary_provider.set(str(saved.get("summary_provider", "custom") or "custom"))
         self.summary_api_key.set(str(saved.get("summary_api_key", "") or ""))
+        self.summary_model.set(str(saved.get("summary_model", "") or ""))
 
         max_tokens = str(saved.get("summary_max_tokens", "") or "")
         if max_tokens:
@@ -479,6 +510,7 @@ class PaperBotGUI:
         self.summary_analyze_btn = ttk.Button(action_bar, text="智能分析", style="Primary.TButton", command=self.on_analyze_selected)
         self.summary_analyze_btn.pack(side=tk.LEFT)
         ttk.Button(action_bar, text="刷新文献", command=self.refresh_downloaded_articles_table).pack(side=tk.LEFT, padx=8)
+        ttk.Button(action_bar, text="删除文献", command=self.on_delete_selected_papers).pack(side=tk.LEFT, padx=8)
 
         ttk.Label(action_bar, text="关键词筛选（可多选）").pack(side=tk.LEFT, padx=(16, 6))
         ttk.Label(action_bar, text="检索").pack(side=tk.LEFT, padx=(8, 4))
@@ -500,6 +532,7 @@ class PaperBotGUI:
         self.summary_base_url = tk.StringVar()
         self.summary_api_key = tk.StringVar()
         self.summary_provider = tk.StringVar(value="custom")
+        self.summary_model = tk.StringVar()
         self.summary_max_tokens = tk.StringVar(value="900")
 
         ttk.Label(cfg, text="API 提供商").grid(row=0, column=0, sticky=tk.W, pady=5)
@@ -519,10 +552,13 @@ class PaperBotGUI:
         ttk.Label(cfg, text="API Key").grid(row=2, column=0, sticky=tk.W, pady=5)
         ttk.Entry(cfg, textvariable=self.summary_api_key, width=78).grid(row=2, column=1, sticky=tk.EW, padx=8, pady=5)
 
-        ttk.Label(cfg, text="最大输出 token").grid(row=3, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(cfg, textvariable=self.summary_max_tokens, width=20).grid(row=3, column=1, sticky=tk.W, padx=8, pady=5)
+        ttk.Label(cfg, text="模型名 (model)").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(cfg, textvariable=self.summary_model, width=36).grid(row=3, column=1, sticky=tk.W, padx=8, pady=5)
 
-        ttk.Button(cfg, text="确定", style="Success.TButton", command=self.on_save_summary_config).grid(row=4, column=1, sticky=tk.E, pady=(8, 0))
+        ttk.Label(cfg, text="最大输出 token").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(cfg, textvariable=self.summary_max_tokens, width=20).grid(row=4, column=1, sticky=tk.W, padx=8, pady=5)
+
+        ttk.Button(cfg, text="确定", style="Success.TButton", command=self.on_save_summary_config).grid(row=5, column=1, sticky=tk.E, pady=(8, 0))
         cfg.columnconfigure(1, weight=1)
 
         out = ttk.LabelFrame(parent, text="总结结果", padding=14, style="Card.TLabelframe")
@@ -570,7 +606,7 @@ class PaperBotGUI:
         ttk.Label(parent, text="已添加期刊", font=("Arial", 13, "bold")).pack(anchor=tk.W, pady=(4, 6))
 
         cols = ("name", "publisher", "issn")
-        self.journal_tree = ttk.Treeview(parent, columns=cols, show="headings", height=9)
+        self.journal_tree = ttk.Treeview(parent, columns=cols, show="headings", height=9, selectmode="extended")
         self.journal_tree.heading("name", text="期刊名称")
         self.journal_tree.heading("publisher", text="出版社")
         self.journal_tree.heading("issn", text="ISSN")
@@ -664,6 +700,7 @@ class PaperBotGUI:
         self.download_success_count = 0
 
     def refresh_journal_table(self) -> None:
+        selected = set(self.journal_tree.selection()) if hasattr(self, "journal_tree") else set()
         for item in self.journal_tree.get_children():
             self.journal_tree.delete(item)
         for idx, j in enumerate(_get_journals()):
@@ -673,7 +710,10 @@ class PaperBotGUI:
                 issn = f"P:{issn_print} / O:{issn_online}"
             else:
                 issn = issn_print or issn_online or (j.get("crossref_issn") or "")
-            self.journal_tree.insert("", tk.END, iid=str(idx), values=(j.get("name", ""), (j.get("publisher") or "").capitalize(), issn))
+            item_id = str(idx)
+            self.journal_tree.insert("", tk.END, iid=item_id, values=(j.get("name", ""), (j.get("publisher") or "").capitalize(), issn))
+            if item_id in selected:
+                self.journal_tree.selection_add(item_id)
 
     def refresh_downloaded_articles_table(self) -> None:
         try:
@@ -743,12 +783,69 @@ class PaperBotGUI:
         self.downloaded_tree.selection_set(item_id)
         self._render_summary_for_selected([doi])
 
+    def _download_missing_fulltext_thread(self, doi: str) -> None:
+        try:
+            cmd = [sys.executable, str(BASE_DIR / "app" / "download_single_fulltext.py"), "--doi", doi]
+            result = subprocess.run(
+                cmd,
+                cwd=BASE_DIR,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+        except Exception as e:
+            result = subprocess.CompletedProcess(args=["download_single_fulltext.py"], returncode=1, stdout="", stderr=str(e))
+
+        def _done() -> None:
+            if result.stdout:
+                self.log(result.stdout.rstrip())
+            if result.stderr:
+                self.log(result.stderr.rstrip())
+            self.refresh_downloaded_articles_table()
+            if result.returncode == 0:
+                messagebox.showinfo("完成", f"已补下载全文：{doi}")
+            else:
+                messagebox.showerror("失败", f"补下载失败：{doi}")
+
+        self.root.after(0, _done)
+
+    def _on_status_link_click(self, doi: str, item_id: str) -> None:
+        if not doi:
+            messagebox.showwarning("提示", "该记录缺少 DOI，无法补下载")
+            return
+        self.downloaded_tree.selection_set(item_id)
+        threading.Thread(target=self._download_missing_fulltext_thread, args=(doi,), daemon=True).start()
+
     def _refresh_summary_link_labels(self) -> None:
         if not hasattr(self, "downloaded_tree"):
             return
         active_items: set[str] = set()
+        active_status_items: set[str] = set()
         for item in self.downloaded_tree.get_children():
             vals = self.downloaded_tree.item(item, "values")
+            if len(vals) >= 5 and str(vals[4]).strip() == "下载":
+                bbox_status = self.downloaded_tree.bbox(item, "status")
+                if bbox_status:
+                    x, y, w, h = bbox_status
+                    doi = str(vals[3] if len(vals) >= 4 else "").strip()
+                    active_status_items.add(item)
+                    lbl = self.status_link_labels.get(item)
+                    if lbl is None:
+                        lbl = tk.Label(
+                            self.downloaded_tree,
+                            text="下载",
+                            fg="#2563eb",
+                            bg="#ffffff",
+                            cursor="hand2",
+                            font=self.summary_link_font,
+                        )
+                        self.status_link_labels[item] = lbl
+                    else:
+                        lbl.configure(bg="#ffffff")
+                    lbl.bind("<Button-1>", lambda _e, d=doi, iid=item: self._on_status_link_click(d, iid))
+                    lbl.place(x=x + 1, y=y + 1, width=max(w - 2, 1), height=max(h - 2, 1))
             if len(vals) < 6 or str(vals[5]).strip() != "查看":
                 continue
             bbox = self.downloaded_tree.bbox(item, "summary_status")
@@ -776,6 +873,10 @@ class PaperBotGUI:
             if item_id not in active_items:
                 self.summary_link_labels[item_id].destroy()
                 self.summary_link_labels.pop(item_id, None)
+        for item_id in list(self.status_link_labels.keys()):
+            if item_id not in active_status_items:
+                self.status_link_labels[item_id].destroy()
+                self.status_link_labels.pop(item_id, None)
 
     def get_selected_keywords(self) -> list[str]:
         return sorted(self.download_keyword_selected)
@@ -809,17 +910,72 @@ class PaperBotGUI:
             return
         self._render_summary_for_selected(selected_dois)
 
+    def on_delete_selected_papers(self) -> None:
+        selected = self.downloaded_tree.selection()
+        if not selected:
+            messagebox.showwarning("提示", "请先选择要删除的文献")
+            return
+
+        dois: list[str] = []
+        for item in selected:
+            vals = self.downloaded_tree.item(item, "values")
+            doi = str(vals[3] if len(vals) >= 4 else "").strip()
+            if doi:
+                dois.append(doi)
+
+        unique_dois = sorted(set(dois))
+        if not unique_dois:
+            messagebox.showwarning("提示", "选中的记录没有 DOI，无法删除")
+            return
+
+        if not messagebox.askyesno("确认删除", f"确认删除所选 {len(unique_dois)} 篇文献及其本地全文文件？"):
+            return
+
+        db_path = _get_db_path_from_cfg()
+        if not db_path.exists():
+            messagebox.showerror("失败", "papers.db 不存在")
+            return
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            file_paths = delete_papers_by_dois(conn, unique_dois)
+        finally:
+            conn.close()
+
+        deleted_files = 0
+        for file_path in sorted(set(file_paths)):
+            try:
+                p = Path(file_path)
+                if p.exists() and p.is_file():
+                    p.unlink()
+                    deleted_files += 1
+            except Exception as e:
+                self.log(f"删除本地文件失败：{file_path} -> {e}")
+
+        self.refresh_downloaded_articles_table()
+        self.summary_output.delete("1.0", tk.END)
+        self.log(f"已删除文献 {len(unique_dois)} 篇，本地文件 {deleted_files} 个")
+        messagebox.showinfo("完成", f"已删除文献 {len(unique_dois)} 篇")
+
     def on_downloaded_tree_click(self, event: tk.Event) -> None:
         region = self.downloaded_tree.identify("region", event.x, event.y)
         if region != "cell":
             return
         column = self.downloaded_tree.identify_column(event.x)
         item = self.downloaded_tree.identify_row(event.y)
-        if column != "#6" or not item:
+        if not item:
             return
 
         vals = self.downloaded_tree.item(item, "values")
-        if len(vals) < 6 or str(vals[5]).strip() != "查看":
+        doi = str(vals[3] if len(vals) >= 4 else "").strip()
+        if column == "#5" and len(vals) >= 5 and str(vals[4]).strip() == "下载":
+            if not doi:
+                messagebox.showwarning("提示", "该记录缺少 DOI，无法补下载")
+                return
+            self.downloaded_tree.selection_set(item)
+            threading.Thread(target=self._download_missing_fulltext_thread, args=(doi,), daemon=True).start()
+            return
+        if column != "#6" or len(vals) < 6 or str(vals[5]).strip() != "查看":
             return
 
         doi = str(vals[3] if len(vals) >= 4 else "").strip()
@@ -836,10 +992,16 @@ class PaperBotGUI:
             return
         column = self.downloaded_tree.identify_column(event.x)
         item = self.downloaded_tree.identify_row(event.y)
-        if column != "#6" or not item:
+        if not item:
             self.downloaded_tree.configure(cursor="")
             return
         vals = self.downloaded_tree.item(item, "values")
+        if column == "#5" and len(vals) >= 5 and str(vals[4]).strip() == "下载":
+            self.downloaded_tree.configure(cursor="hand2")
+            return
+        if column != "#6":
+            self.downloaded_tree.configure(cursor="")
+            return
         if len(vals) >= 6 and str(vals[5]).strip() == "查看":
             self.downloaded_tree.configure(cursor="hand2")
             return
@@ -967,8 +1129,12 @@ class PaperBotGUI:
 
     def on_save_summary_config(self, show_success: bool = True) -> bool:
         max_tokens = self.summary_max_tokens.get().strip()
+        model = self.summary_model.get().strip()
         if max_tokens and not max_tokens.isdigit():
             messagebox.showerror("输入错误", "最大输出 token 必须是整数")
+            return False
+        if not model:
+            messagebox.showerror("输入错误", "模型名不能为空")
             return False
 
         provider = self.summary_provider.get().strip()
@@ -983,6 +1149,7 @@ class PaperBotGUI:
 
         _save_summary_llm_config(
             provider=provider,
+            model=model,
             base_url=self.summary_base_url.get(),
             api_key=api_key,
             max_tokens=max_tokens,
@@ -1151,8 +1318,19 @@ class PaperBotGUI:
             self.progress_var.set(98)
             self.progress_label.config(text="下载进度 完成发现/下载（98%）")
 
-    def _run_daily_with_progress(self) -> subprocess.CompletedProcess[str]:
+    def _get_selected_journal_indexes(self) -> list[int]:
+        selected: list[int] = []
+        for item in self.journal_tree.selection():
+            try:
+                selected.append(int(item))
+            except ValueError:
+                continue
+        return sorted(set(selected))
+
+    def _run_daily_with_progress(self, selected_journal_indexes: list[int]) -> subprocess.CompletedProcess[str]:
         cmd = [sys.executable, str(BASE_DIR / "app" / "run_daily.py")]
+        if selected_journal_indexes:
+            cmd.extend(["--journal-indexes", ",".join(str(i) for i in selected_journal_indexes)])
         proc = subprocess.Popen(
             cmd,
             cwd=BASE_DIR,
@@ -1186,10 +1364,10 @@ class PaperBotGUI:
         else:
             messagebox.showerror("失败", f"run_daily.py 失败，返回码={result.returncode}")
 
-    def _run_task_thread(self, date_from: str, date_until: str) -> None:
+    def _run_task_thread(self, date_from: str, date_until: str, selected_journal_indexes: list[int]) -> None:
         try:
             _set_date_range(date_from=date_from, date_until=date_until)
-            result = self._run_daily_with_progress()
+            result = self._run_daily_with_progress(selected_journal_indexes)
         except Exception as e:
             result = subprocess.CompletedProcess(args=["run_daily.py"], returncode=1, stdout="", stderr=str(e))
         self.root.after(0, lambda: self._finish_run(result))
@@ -1199,19 +1377,27 @@ class PaperBotGUI:
             return
         date_from = self.date_from.get().strip()
         date_until = self.date_until.get().strip()
+        selected_journal_indexes = self._get_selected_journal_indexes()
         if not date_from or not date_until:
             messagebox.showerror("输入错误", "请填写开始和结束时间（YYYY-MM-DD）")
+            return
+        if not selected_journal_indexes:
+            messagebox.showwarning("提示", "请先在已添加期刊列表中选择一个或多个期刊")
             return
 
         self.running = True
         self.start_btn.config(state=tk.DISABLED)
         self.clear_logs()
-        self.log(f"• 任务启动：{date_from} ~ {date_until}")
+        self.log(f"任务启动：{date_from} ~ {date_until}，已选期刊 {len(selected_journal_indexes)} 个")
         self.download_total_expected = 0
         self.download_success_count = 0
         self.progress_var.set(5)
         self.progress_label.config(text="下载进度 成功 0/0（5%）")
-        threading.Thread(target=self._run_task_thread, args=(date_from, date_until), daemon=True).start()
+        threading.Thread(
+            target=self._run_task_thread,
+            args=(date_from, date_until, selected_journal_indexes),
+            daemon=True,
+        ).start()
 
 
 def main() -> None:
